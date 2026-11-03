@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 import json,uuid,copy
-from .config import ROOT,DEFAULTS
+from .config import STATE_ROOT,ROOT,DEFAULTS
 from .jobs import atomic_json,read_json
 from .protocol import apply_plan
 
@@ -23,8 +23,18 @@ def new_task():
         jobs=[],state='draft',center_mode=None,metadata={},draft='',prepared=False,needs_split=False)
 
 class Conversations:
-    def __init__(self,root=None):self.root=Path(root or ROOT/'conversations');self.root.mkdir(parents=True,exist_ok=True)
-    def save(self,task):atomic_json(self.root/(task['id']+'.json'),task)
+    def __init__(self,root=None):self.root=Path(root or STATE_ROOT/'conversations');self.root.mkdir(parents=True,exist_ok=True)
+    def save(self,task):
+        if task.get('_deleted'):return
+        atomic_json(self.root/(task['id']+'.json'),task)
+    def allows_empty(self):return (self.root/'.empty_allowed').exists()
+    def delete(self,identity):
+        if not identity or identity in ('.','..') or '/' in identity or '\\' in identity:
+            raise ValueError('Invalid task ID')
+        # Remember an intentionally empty task list, without retaining deleted chats.
+        (self.root/'.empty_allowed').touch()
+        (self.root/(identity+'.tmp')).unlink(missing_ok=True)
+        (self.root/(identity+'.json')).unlink(missing_ok=True)
     def all(self):
         return [v for p in sorted(self.root.glob('*.json'),reverse=True) if (v:=read_json(p)) and v.get('id')==p.stem]
     def create(self):

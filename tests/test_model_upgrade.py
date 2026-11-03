@@ -20,7 +20,7 @@ def packet(updates,action='reconstruct',mode='known'):
  return {'plan':{'action':action,'updates':[{'field':k,'value':str(v)} for k,v in updates.items()],'message':'I will check the requested file.'},'center_mode':mode,'row_scope':'unchanged','accept_defaults':False}
 
 def interpret(command,t,response):
- with tempfile.TemporaryDirectory() as tmp,patch('assistant_lab.chat_model.ROOT',Path(tmp)),patch('assistant_lab.chat_model.post_json',side_effect=[{'prompt':'test prompt'},{'content':json.dumps(response)}]):return ChatModel().converse(command,t)
+ with tempfile.TemporaryDirectory() as tmp,patch('assistant_lab.chat_model.STATE_ROOT',Path(tmp)),patch('assistant_lab.chat_model.post_json',side_effect=[{'prompt':'test prompt'},{'content':json.dumps(response)}]):return ChatModel().converse(command,t)
 
 class PathGroundingTests(unittest.TestCase):
  def test_uri_native_wsl_and_quoted_paths_are_canonical(self):
@@ -71,7 +71,7 @@ class RecoveryAndGpuTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp);runtime=root/'runtime/cuda';runtime.mkdir(parents=True);(runtime/'llama-server.exe').write_bytes(b'fake');model=root/'test.gguf';model.write_bytes(b'fake')
    process=Mock();process.poll.return_value=None
-   with patch('assistant_lab.llm.ROOT',root),patch('assistant_lab.llm.RUNTIME_ROOT',root/'runtime'),patch('assistant_lab.llm.subprocess.Popen',return_value=process) as popen:
+   with patch('assistant_lab.llm.STATE_ROOT',root),patch('assistant_lab.llm.RUNTIME_ROOT',root/'runtime'),patch('assistant_lab.llm.subprocess.Popen',return_value=process) as popen:
     local=LocalModel();local.start('GPU 1',context=8192,model_path=model);env=popen.call_args.kwargs['env'];args=popen.call_args.args[0]
     self.assertEqual(env['CUDA_VISIBLE_DEVICES'],'1');self.assertEqual(env['CUDA_DEVICE_ORDER'],'PCI_BUS_ID');self.assertIn('8192',args);self.assertIn('off',args);self.assertEqual(os.environ.get('CUDA_VISIBLE_DEVICES'),original);local.stop()
 

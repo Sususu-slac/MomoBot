@@ -18,6 +18,9 @@ def explicit_answer(text,task):
         elif short in ('middle','middle five','middle 5','five middle slices','five middle slices please','5 middle slices','try five middle slices'):controls['row_scope']='middle'
     if current=='center_mode' and short in ('auto','automatic','automatically','find automatically','find the center automatically','find it automatically'):controls['center_mode']='auto'
     if current in ('epochs','prompt','limit','split') and short in ('default','use default','use the default','keep the default','use defaults'):controls['accept_defaults']=True
+    if task['kind'] in ('try_center','try_angle') and re.search(r'\bmiddle\s+(?:detector\s+)?(?:slice|row)\b|中间(?:的)?(?:一)?层',text,re.I):
+        # Keep the user's literal "middle" choice, independent of a model's numeric guess.
+        updates['trial_row']=None
     patterns={
       'gpu':r'\bgpu\s*(?:to|is|=|:)?\s*(\d+)\b',
       'epochs':r'\b(\d+)\s*epochs?\b',

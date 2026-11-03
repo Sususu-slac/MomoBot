@@ -1,9 +1,8 @@
-# MomoBot 0.6.0
+# MomoBot 0.7.0
 
-## Windows source package
+## Windows installation / source launcher package
 
-This release is a workstation GUI and Windows launcher bundle. Models, llama.cpp
-binaries, scientific backends, datasets and saved conversations are external.
+The Windows installer and portable source ZIP install the GUI and launchers. They require the existing **BL62_Studio Python 3.12 environment**; this is not a self-contained Python executable. Model weights, llama.cpp binaries, scientific backends, datasets and saved conversations are external. The installer creates a kitten desktop shortcut and supports per-user installation.
 
 1. Clone/download this repository to `D:\BL62_Assistant_Chat`.
 2. Create/use the Windows Python 3.12 environment `BL62_Studio`, then run
@@ -12,9 +11,9 @@ binaries, scientific backends, datasets and saved conversations are external.
    and [Fine-tune](https://github.com/Sususu-slac/BL62_Finetune_GUI) projects and
    their native/WSL scientific environments before running scientific tasks.
 4. `python tools/install_momobot_runtime.py` downloads the pinned local llama.cpp
-   Windows runtime. The model is external; `tools/download_momobot_parallel.py`
-   is the resumable, checksum-verified downloader used on the original workstation.
-   Create `D:\Chcekpoints\LLM` before using it. The primary model is about 19 GB.
+   Windows runtime. The model is external: run `python tools/download_model.py --model gemma4`
+   for the recommended Google model, or `--model primary` for Qwen. Downloads
+   are resumable and checked against pinned revisions, sizes and SHA256 hashes.
 5. Review the workstation paths in `assistant_lab/config.py` (companion projects,
    Conda environments, shared SAM3 checkpoint and language models). The supplied
    defaults describe the original Windows/WSL workstation.
@@ -43,13 +42,13 @@ MomoBot uses a chubby orange baby kitten app/desktop icon. Standalone Hi, Hello 
 
 ## Local model and GPU assignment
 
-The default language model is **Qwen3.8-27B Q4_K_M**, running on **physical GPU 1** with an 8K context and thinking disabled for ordinary requests. Opening MomoBot loads the model; keeping the window open or minimized keeps it resident. Closing MomoBot stops its model process and releases its GPU memory. Scientific jobs continue in their own processes. A cold model load measured about 35 seconds; greetings still reply immediately while it loads.
+The recommended default is **Google Gemma 4 26B-A4B QAT Q4_0**, running locally on **physical GPU 1** with an 8K context. **Qwen3.8-27B Q4_K_M** is retained as the stable alternative. Select **Settings → Language model…** to switch. The selection is saved separately per state directory; a missing model never stops the currently loaded model.
 
-New scientific tasks default to **GPU 0**, including reconstruction, SAM3 segmentation and fine-tuning. Existing archived job records retain their actual GPU. Task GPU remains configurable. The language model's CUDA visibility is isolated to its own process.
+Opening MomoBot loads the selected model. Closing the window stops only its language-model server; scientific jobs remain independent. Greetings and saved-result queries use local fast paths. Scientific jobs default to **GPU 0**.
 
-Use **Settings → Language model…** to switch between the primary GPU model and the retained **Qwen3-4B CPU fallback**. The new llama.cpp b11988 runtime is local to `runtime/llama-b11988`; scientific environments are reused. The primary model is stored at `D:\Chcekpoints\LLM\Qwen3.8-27B-Q4_K_M.gguf` and its published SHA256 was verified. See VALIDATION_0.5.0.md for measurements and test limits.
+The updated native chat adapter uses Gemma’s own template and strict JSON output, while Qwen retains its tested completion adapter. Unsupported source-file deletion and automatic angle scoring are rejected before dispatch. An explicit middle trial slice is handled as the application’s middle-slice selection.
 
-Pasted `file:///D:/…` links are normalized into Windows paths, including URL-encoded spaces. Current paths need not be repeated in follow-ups. Unrequested output/checkpoint changes are ignored, proposed source paths must match explicit input, and a newly selected dataset starts with its own center. Full-volume row limits are computed from inspected data. Saved centers are restored only for the matching input dataset.
+See [the comparison report](docs/MODEL_COMPARISON_20261102.md) for exact scope and limitations. The installed Python/scientific environments are reused. Model files and llama.cpp binaries are external and are never bundled in GitHub releases.
 
 ## Chat from Anywhere
 
@@ -134,3 +133,13 @@ The application runs with the current Windows user's permissions. It does **not*
 ## Validation
 
 See `VALIDATION.md`. Automated tests cover conversation isolation, task switching during asynchronous responses, source validation, late metadata checks, cancellation routing, explicit choices and the preparation-to-training transition. Actual small reconstruction and segmentation jobs were run from the chat interface with CPU Qwen. Model-response raw text and application normalizations are recorded separately under `outputs/`.
+
+## Delete tasks
+
+Select a task and use **Delete task** below the task list, its right-click menu, or Settings. Confirm to delete the conversation and task-list entry. Source inputs and generated results remain on disk. Deleting the last task leaves the list empty, including after restart. Model loading and replies do not disable deletion; late callbacks are ignored. Stop running scientific jobs before deleting their conversation.
+
+## Shared Windows accounts
+
+`MOMOBOT_STATE_ROOT` selects the current user’s conversation, preference, Telegram and log directory. The Windows launcher defaults new installs to `%LOCALAPPDATA%\BL62_UserData\MomoBot` and preserves existing local conversations when upgrading an established source folder. `BL62_CONDA_ENVS`, `MOMOBOT_RUNTIME_ROOT` and `BL62_MODEL_DIR` override the shared interpreter, runtime and model locations. Weights can be shared read-only while each account has its own settings and chats.
+
+The standard model location is `D:\Chcekpoints\LLM`. To choose another folder, set `BL62_MODEL_DIR` for both downloader and launcher. Shared scientific runtimes require explicit Windows read/execute access; WSL training still needs a distribution registered for the Windows account performing training.

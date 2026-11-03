@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json,time,copy,re
-from .config import ROOT
+from .config import STATE_ROOT,ROOT
 from .llm import LocalModel,post_json
 from .protocol import SCHEMA,parse_plan
 from .conversations import PATHS
@@ -8,6 +8,7 @@ from .chat_flow import guidance,extract_paths
 from .answer_bindings import explicit_answer
 from .results import result_context
 from .path_rules import ground_path_updates,text_without_paths
+from .request_limits import unsupported_request,MESSAGES
 
 CHAT_SCHEMA={'type':'object','additionalProperties':False,'properties':{
     'plan':SCHEMA,'center_mode':{'type':'string','enum':['auto','known','unchanged']},
@@ -43,16 +44,32 @@ User: 把这个文件夹里的图片分割一下。
 '''
 
 class ChatModel(LocalModel):
+    def structured_reply(self,messages):
+        if self.adapter=='completion':
+            rendered=post_json(self.base_url+'/apply-template',{'messages':messages,'chat_template_kwargs':{'enable_thinking':False,'preserve_thinking':False}},token=self.token)
+            return post_json(self.base_url+'/completion',dict(prompt=rendered['prompt'],n_predict=self.max_output_tokens,cache_prompt=True,json_schema=CHAT_SCHEMA,**self.sampling),token=self.token)
+        messages=copy.deepcopy(messages)
+        messages[0]['content']+='\n\nReturn one JSON object matching this schema. Include each update field at most once.\n'+json.dumps(CHAT_SCHEMA)
+        request=dict(messages=messages,max_tokens=self.max_output_tokens,cache_prompt=True,chat_template_kwargs=self.template_kwargs,
+            response_format={'type':'json_schema','json_schema':{'name':'momobot_plan','strict':True,'schema':CHAT_SCHEMA}},**self.sampling)
+        if self.thinking=='low':request['reasoning_effort']='low'
+        response=post_json(self.base_url+'/v1/chat/completions',request,token=self.token)
+        choice=response['choices'][0]
+        return dict(content=choice['message'].get('content') or '',stopped_limit=choice.get('finish_reason')=='length',usage=response.get('usage',{}),timings=response.get('timings',{}))
     def converse(self,text,task):
+        unsupported=unsupported_request(text)
+        if unsupported:
+            reply=MESSAGES[unsupported][1 if task.get('language')=='zh' or re.search(r'[\u4e00-\u9fff]',text) else 0]
+            packet=dict(plan=dict(action='clarify',updates=[],message=reply),center_mode='unchanged',row_scope='unchanged',accept_defaults=False)
+            return parse_plan(packet['plan']),packet,dict(seconds=0.,raw=json.dumps(packet,ensure_ascii=False),normalizations=['Unsupported capability rejected locally'],unsupported_capability=unsupported)
         settings={k:v for k,v in task['settings'].items() if k not in ('training_python','training_repo','training_template','sam3_repo','distro')}
         history=[{'role':m['role'],'text':m['text'][:650]} for m in task['messages'][-6:] if m['text']]
         context=dict(task_kind=task['kind'],task_state=task['state'],next_question=guidance(task),
             language=task.get('language','en'),pending_run=task.get('run_requested',False),settings=settings,
             metadata=task['metadata'],recent_conversation=history,latest_user_message=text,explicit_paths=extract_paths(text),actual_results=result_context(task))
         began=time.perf_counter()
-        rendered=post_json(self.base_url+'/apply-template',{'messages':[{'role':'system','content':SYSTEM},{'role':'user','content':json.dumps(context,ensure_ascii=False)}],'chat_template_kwargs':{'enable_thinking':False,'preserve_thinking':False}},token=self.token)
-        response=post_json(self.base_url+'/completion',dict(prompt=rendered['prompt'],temperature=0,seed=42,n_predict=512,cache_prompt=True,json_schema=CHAT_SCHEMA),token=self.token)
-        folder=ROOT/'outputs/model_responses';folder.mkdir(parents=True,exist_ok=True)
+        response=self.structured_reply([{'role':'system','content':SYSTEM},{'role':'user','content':json.dumps(context,ensure_ascii=False)}])
+        folder=STATE_ROOT/'outputs/model_responses';folder.mkdir(parents=True,exist_ok=True)
         (folder/f'{time.time_ns()}.json').write_text(json.dumps({'command':text,'content':response['content']},indent=2,ensure_ascii=False),encoding='utf-8')
         if response.get('stopped_limit'):raise ValueError('The reply was incomplete. Please try a shorter message.')
         data=json.loads(response['content']);normalizations=[]
@@ -88,3 +105,4 @@ class ChatModel(LocalModel):
                 del plan.updates['prompt'];normalizations.append('Removed a feature not supplied by the user')
         if data['center_mode'] not in ('auto','known','unchanged') or data['row_scope'] not in ('all','middle','unchanged') or type(data['accept_defaults']) is not bool:raise ValueError('Invalid conversation response')
         return plan,data,dict(seconds=time.perf_counter()-began,raw=response['content'],normalizations=normalizations)
+

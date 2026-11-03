@@ -5,8 +5,8 @@ from PySide6.QtCore import Qt,QThread,Signal,QTimer,QUrl,QPropertyAnimation,QEas
 from PySide6.QtGui import QIcon,QDesktopServices
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
  QListWidget,QListWidgetItem,QSplitter,QScrollArea,QPlainTextEdit,QMenu,QFileDialog,
- QInputDialog,QDialog,QDialogButtonBox,QSizePolicy,QFrame)
-from .config import ROOT,MODEL,DEFAULTS,MODEL_PROFILES,load_preferences,save_preferences
+ QInputDialog,QDialog,QDialogButtonBox,QSizePolicy,QFrame,QMessageBox)
+from .config import STATE_ROOT,ROOT,MODEL,DEFAULTS,MODEL_PROFILES,DEFAULT_PROFILE,load_preferences,save_preferences
 from .conversations import (Conversations,TITLES,choose_kind,step,question,message,mark,action,review,
  apply_response,set_source,inspect_source,accept_source,PATHS)
 from .chat_model import ChatModel
@@ -105,8 +105,8 @@ class ChatWindow(QMainWindow):
             for job in t['jobs']:self.store_for(Path(job['job_dir']).parent)
         self.current_id=None;self.model=ChatModel();self.busy=False;self.threads=[];self.model_ready=False;self.progress_key=None
         self.default_gpu=0;self.closing=False
-        self.model_profile=load_preferences().get('model_profile','primary')
-        if self.model_profile not in MODEL_PROFILES:self.model_profile='primary'
+        self.model_profile=load_preferences().get('model_profile',DEFAULT_PROFILE)
+        if self.model_profile not in MODEL_PROFILES:self.model_profile=DEFAULT_PROFILE
         self.rendered_id=None;self.views={};self.rendered_order=[];self.scroll_positions={};self.scroll_generation=0
         central=QWidget();outer=QHBoxLayout(central);outer.setContentsMargins(0,0,0,0);split=QSplitter();outer.addWidget(split)
         left=QWidget();left.setObjectName('sidebar');left.setMinimumWidth(220);left.setMaximumWidth(360);lv=QVBoxLayout(left);lv.setContentsMargins(15,24,15,16)
@@ -114,6 +114,8 @@ class ChatWindow(QMainWindow):
         label=QLabel('TASKS');label.setObjectName('muted');lv.addWidget(label);lv.addSpacing(10)
         self.new_btn=QPushButton('+  New task');self.new_btn.setObjectName('new');self.new_btn.clicked.connect(self.new_task);lv.addWidget(self.new_btn)
         self.task_list=QListWidget();self.task_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff);self.task_list.setWordWrap(False);self.task_list.setTextElideMode(Qt.ElideRight);self.task_list.currentItemChanged.connect(self.selected);self.task_list.itemDoubleClicked.connect(self.rename_task);lv.addWidget(self.task_list,1)
+        self.task_list.setContextMenuPolicy(Qt.CustomContextMenu);self.task_list.customContextMenuRequested.connect(self.task_context_menu)
+        self.delete_btn=QPushButton('Delete task');self.delete_btn.clicked.connect(lambda:self.delete_task());lv.addWidget(self.delete_btn)
         local=QLabel('Local model · Saved on this computer');local.setObjectName('muted');local.setWordWrap(True);lv.addWidget(local);split.addWidget(left)
         right=QWidget();rv=QVBoxLayout(right);rv.setContentsMargins(24,22,24,18);rv.setSpacing(14)
         head=QHBoxLayout();self.heading=QLabel('New task');self.heading.setObjectName('heading');head.addWidget(self.heading,1)
@@ -132,7 +134,8 @@ class ChatWindow(QMainWindow):
         split.addWidget(right);split.setSizes([260,1020]);self.setCentralWidget(central)
         self.timer=QTimer(self);self.timer.setInterval(800);self.timer.timeout.connect(self.poll);self.timer.start()
         for store in self.stores.values():store.active()
-        if not self.tasks:self.new_task()
+        if not self.tasks and not self.repo.allows_empty():self.new_task()
+        elif not self.tasks:self.render()
         else:self.refresh_list();self.select_task(next(iter(self.tasks)))
         self.poll()
         if autoload:QTimer.singleShot(200,self.load_model)
@@ -168,6 +171,46 @@ class ChatWindow(QMainWindow):
     def rename_task(self,item):
         task=self.tasks[item.data(Qt.UserRole)];name,ok=QInputDialog.getText(self,'Rename task','Name',text=task['title'])
         if ok and name.strip():task['title']=name.strip()[:120];self.save(task);self.refresh_list();self.render()
+    def task_context_menu(self,position):
+        item=self.task_list.itemAt(position)
+        if not item:return
+        identity=item.data(Qt.UserRole);menu=QMenu(self)
+        rename=menu.addAction('Rename task');rename.triggered.connect(lambda:self.rename_task(item))
+        delete=menu.addAction('Delete task…')
+        delete.triggered.connect(lambda:self.delete_task(identity))
+        menu.exec(self.task_list.viewport().mapToGlobal(position))
+    def _task_delete_blocked(self,task):
+        if task['state'] in ('running','stopping'):return 'Use Safe Stop and wait for this task to stop before deleting it.'
+        for job in task['jobs']:
+            status=read_json(Path(job['job_dir'])/'job_status.json')
+            if status.get('state') in ('queued','running','stopping'):
+                return 'Use Safe Stop and wait for this task to stop before deleting it.'
+        return ''
+    def delete_task(self,identity=None):
+        identity=identity or self.current_id;task=self.tasks.get(identity)
+        if task is None:return False
+        blocked=self._task_delete_blocked(task)
+        if blocked:QMessageBox.information(self,'Delete task',blocked);return False
+        answer=QMessageBox.question(self,'Delete task',f'Delete "{task["title"]}" and its chat history?\n\nGenerated results and source data will be kept.',
+            QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+        if answer!=QMessageBox.Yes:return False
+        # Timers and remote requests can run while the confirmation dialog is open.
+        blocked=self._task_delete_blocked(task)
+        if blocked:QMessageBox.information(self,'Delete task',blocked);return False
+        try:self.repo.delete(identity)
+        except OSError as error:
+            QMessageBox.warning(self,'Cannot delete task',str(error));return False
+        task.update(_deleted=True,cancel_requested=True,run_requested=False)
+        del self.tasks[identity];self.scroll_positions.pop(identity,None)
+        if self.current_id==identity:
+            self.current_id=None;self.composer.clear()
+            if self.tasks:self.select_task(next(iter(self.tasks)))
+            else:self.refresh_list();self.render()
+        else:self.refresh_list()
+        notice='Task deleted. Results kept.'
+        try:self.telegram.forget_task(identity)
+        except OSError:notice='Task deleted. Telegram task settings could not be updated.'
+        self.statusBar().showMessage(notice,10000);return True
     def clear_layout(self,layout):
         while layout.count():
             item=layout.takeAt(0)
@@ -175,7 +218,13 @@ class ChatWindow(QMainWindow):
             elif item.layout():self.clear_layout(item.layout())
     def render(self,scroll_bottom=True):
         task=self.current
-        if not task:return
+        if not task:
+            self.scroll_animation.stop();self.clear_layout(self.messages_layout);self.messages_layout.addStretch(1)
+            self.views={};self.rendered_order=[];self.rendered_id=None;self.heading.setText('New task')
+            self.composer.clear();self.composer.setPlaceholderText('Create a new task to begin…')
+            self.clear_layout(self.choices_layout);self.choices.hide();self.update_send_enabled();return
+        self.composer.setPlaceholderText('Message MomoBot…')
+        self.update_send_enabled()
         bar=self.scroll.verticalScrollBar();position=bar.value();follow=bar.maximum()-position<60 or self.scroll_animation.state()==QAbstractAnimation.Running
         switched=self.rendered_id!=task['id'];order=[m['id'] for m in task['messages']]
         if switched or order[:len(self.rendered_order)]!=self.rendered_order:
@@ -206,7 +255,9 @@ class ChatWindow(QMainWindow):
         self.save(task);self.refresh_list()
         if self.current_id==task['id']:self.render()
     def fail(self,identity,error):
-        task=self.tasks[identity];reply=task.get('reply_id');entry=find_entry(task,reply)
+        task=self.tasks.get(identity)
+        if task is None:return
+        reply=task.get('reply_id');entry=find_entry(task,reply)
         if entry:
             entry['text']=say(task,'I could not complete that step. ','这一步没有完成：')+error;activity(task,reply,say(task,'The request stopped with an error.','请求遇到错误，已停止。'),'error');finish_activity(task,reply,'error');self.save(task)
         else:self.add(task,'assistant','I could not complete that step. '+error)
@@ -216,11 +267,12 @@ class ChatWindow(QMainWindow):
         self.busy=True;self.update_send_enabled();self.attach_btn.setEnabled(False);self.model_status.setText('Working…');self.render_choices()
         thread=CallThread(call,self);self.threads.append(thread)
         def success(value):
+            if identity is not None and identity not in self.tasks:return
             try:done(value)
             except Exception as e:self.fail(identity or self.current_id,str(e))
         thread.done.connect(success);thread.failed.connect(lambda error:self.fail(identity or self.current_id,error))
         def finished():
-            self.busy=False;self.send_btn.setEnabled(True);self.attach_btn.setEnabled(True);self.model_status.setText(MODEL_PROFILES[self.model_profile]['label']+' · Ready' if self.model_ready and self.model.running else 'Local model not loaded');self.threads.remove(thread);thread.deleteLater();self.render_choices()
+            self.busy=False;self.update_send_enabled();self.model_status.setText(MODEL_PROFILES[self.model_profile]['label']+' · Ready' if self.model_ready and self.model.running else 'Local model not loaded');self.threads.remove(thread);thread.deleteLater();self.render_choices()
         thread.finished.connect(finished);thread.start();return True
     def load_model(self,restart=False):
         if self.busy:return
@@ -228,7 +280,7 @@ class ChatWindow(QMainWindow):
         profile=MODEL_PROFILES[self.model_profile]
         def load():
             if restart:self.model.stop()
-            self.model.start(profile['mode'],threads=8,context=profile['context'],model_path=profile['model_path']);self.model.wait_ready()
+            self.model.start(profile['mode'],threads=8,context=profile['context'],model_path=profile['model_path'],**profile.get('options',{}));self.model.wait_ready(timeout=300)
         def ready(_):self.model_ready=True
         self.model_ready=False
         self.background(load,ready)
@@ -238,7 +290,10 @@ class ChatWindow(QMainWindow):
         keys=list(MODEL_PROFILES);labels=[MODEL_PROFILES[k]['label'] for k in keys]
         value,ok=QInputDialog.getItem(self,'Language model','Model',labels,keys.index(self.model_profile),False)
         if ok:
-            self.model_profile=keys[labels.index(value)];prefs=load_preferences();prefs['model_profile']=self.model_profile;save_preferences(prefs);self.load_model(restart=True)
+            selected=keys[labels.index(value)]
+            if not Path(MODEL_PROFILES[selected]['model_path']).is_file():
+                QMessageBox.information(self,'Model not installed','Download the selected model first:\n'+str(MODEL_PROFILES[selected]['model_path']));return
+            self.model_profile=selected;prefs=load_preferences();prefs['model_profile']=self.model_profile;save_preferences(prefs);self.load_model(restart=True)
     def choose(self,token):
         task=self.current
         if not task:return
@@ -262,7 +317,7 @@ class ChatWindow(QMainWindow):
         elif token.startswith('epochs:'):apply_response(task,Plan('set_parameters',{'epochs':int(token.split(':',1)[1])},''))
         self.guide(task)
     def attach_menu(self):
-        if self.busy:return
+        if self.busy or not self.current:return
         menu=QMenu(self)
         for label,field,json_file in [('HDF5 data','input_hdf5',False),('Image folder','image_folder',False),('Dataset folder','dataset',False),('COCO JSON file','dataset',True),('SAM3 checkpoint','checkpoint',False)]:
             a=menu.addAction(label);a.triggered.connect(lambda checked=False,f=field,j=json_file:self.browse(f,j))
@@ -302,7 +357,7 @@ class ChatWindow(QMainWindow):
     def render_if_current(self,task):
         if self.current_id==task['id']:self.render()
     def advance(self,task,reply):
-        if self.closing:return
+        if self.closing or task.get('_deleted') or task['id'] not in self.tasks:return
         if self.busy:QTimer.singleShot(50,lambda:self.advance(task,reply));return
         if task.get('cancel_requested'):
             entry=find_entry(task,reply)
@@ -332,6 +387,7 @@ class ChatWindow(QMainWindow):
         self.composer.clear();task['draft']=''
         self.submit_text(task,text)
     def submit_text(self,task,text,remote=False):
+        if not task or task.get('_deleted'):return
         instant=quick_reply(text)
         if self.closing or not text.strip() or self.busy and instant is None:return
         if chinese(text):task['language']='zh'
@@ -376,7 +432,7 @@ class ChatWindow(QMainWindow):
                 task['search_mode']='auto';plan.action='set_parameters';control['center_mode']='auto'
             elif current=='search_mode' and low in ('manual','trial','sweep','抖动','试重建','手动挑'):
                 plan.action='try_center';plan.updates={};control['center_mode']='unchanged'
-            if current=='prompt' and __import__('re').fullmatch(r'[A-Za-z][A-Za-z -]{0,50}',text) and not __import__('re').match(r'^(what|why|how|explain)\b',low):
+            if not meta.get('unsupported_capability') and current=='prompt' and __import__('re').fullmatch(r'[A-Za-z][A-Za-z -]{0,50}',text) and not __import__('re').match(r'^(what|why|how|explain)\b',low):
                 plan.action='set_parameters';plan.updates['prompt']=task['settings']['prompt'] if low in ('default','use default','use the default') else text
             if plan.action=='stop':finish_activity(task,reply);self.stop_task(task);return
             if plan.action=='status':finish_activity(task,reply);self.show_status(task);return
@@ -414,15 +470,18 @@ class ChatWindow(QMainWindow):
             if not request and __import__('re').search(r"don't|do not|not yet|先不|不要运行|只讨论",low):target['run_requested']=False
             entry=find_entry(target,rid);entry['text']=plan.message
             activity(target,rid,say(target,'Request interpreted; checking task inputs','已理解请求，正在检查任务输入'),'done')
-            folder=ROOT/'outputs/model_traces';folder.mkdir(parents=True,exist_ok=True)
+            folder=STATE_ROOT/'outputs/model_traces';folder.mkdir(parents=True,exist_ok=True)
             (folder/f'{time.time_ns()}.json').write_text(json.dumps(dict(task_id=identity,command=text,response=meta),indent=2,ensure_ascii=False),encoding='utf-8')
             self.save(target);self.render_if_current(target);QTimer.singleShot(50,lambda:self.advance(target,rid))
         self.background(lambda:self.model.converse(text,captured),done,identity)
 
     def update_send_enabled(self):
-        self.send_btn.setEnabled(not self.busy or quick_reply(self.composer.toPlainText()) is not None)
+        self.send_btn.setEnabled(self.current is not None and (not self.busy or quick_reply(self.composer.toPlainText()) is not None))
+        self.attach_btn.setEnabled(self.current is not None and not self.busy)
+        self.delete_btn.setEnabled(self.current is not None)
 
     def start_task(self,task,reply=None):
+        if task.get('_deleted') or task['id'] not in self.tasks:return
         if ready_step(task)!='ready':self.guide(task);return
         try:
             if any(store.active() for store in self.stores.values()):raise ValueError('Another task is running. Open it in the task list, or wait for it to finish.')
@@ -511,10 +570,11 @@ class ChatWindow(QMainWindow):
         a=menu.addAction('Chat from Anywhere…');a.triggered.connect(self.telegram.show)
         a=menu.addAction('Language model…');a.setEnabled(not self.busy);a.triggered.connect(self.select_language_model)
         a=menu.addAction('Reload local model');a.setEnabled(not self.busy);a.triggered.connect(lambda:self.load_model(restart=True))
-        a=menu.addAction('Task GPU…');a.setEnabled(not self.busy);a.triggered.connect(self.select_gpu)
-        a=menu.addAction('View task log');a.triggered.connect(self.show_log)
-        a=menu.addAction('Open results');a.triggered.connect(lambda:self.open_output(self.current))
-        menu.addSeparator();a=menu.addAction('About access permissions');a.triggered.connect(self.permissions)
+        a=menu.addAction('Task GPU…');a.setEnabled(not self.busy and self.current is not None);a.triggered.connect(self.select_gpu)
+        a=menu.addAction('View task log');a.setEnabled(self.current is not None);a.triggered.connect(self.show_log)
+        a=menu.addAction('Open results');a.setEnabled(self.current is not None);a.triggered.connect(lambda:self.open_output(self.current))
+        a=menu.addAction('Delete task…');a.setEnabled(self.current is not None);a.triggered.connect(lambda:self.delete_task())
+        menu.addSeparator();a=menu.addAction('About access permissions');a.setEnabled(self.current is not None);a.triggered.connect(self.permissions)
         menu.exec(self.more_btn.mapToGlobal(self.more_btn.rect().bottomLeft()))
     def select_gpu(self):
         if self.current['state'] in ('running','stopping'):self.fail(self.current_id,'Wait for this task before changing its GPU.');return

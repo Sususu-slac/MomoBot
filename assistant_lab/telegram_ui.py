@@ -35,6 +35,14 @@ class TelegramController(QObject):
         cfg=self.settings.read();task=self.window.tasks.get(cfg.get('task_id')) or self.window.current
         if task and task['id']!=cfg.get('task_id'):self.subscribe(task)
         return task
+    def forget_task(self,identity):
+        cfg=self.settings.read()
+        if identity in cfg.get('subscriptions',[]) or cfg.get('task_id')==identity:
+            self.settings.update(subscriptions=[v for v in cfg.get('subscriptions',[]) if v!=identity],
+                task_id=None if cfg.get('task_id')==identity else cfg.get('task_id'))
+        self.seen={k:v for k,v in self.seen.items() if k[0]!=identity}
+        self.stickers_seen={k for k in self.stickers_seen if k[0]!=identity}
+        self.sent_at={k:v for k,v in self.sent_at.items() if k[0]!=identity}
     def stop(self):
         if self.bridge:self.bridge.stop();self.bridge=None
         self.connection_ready=False;self.connecting=False

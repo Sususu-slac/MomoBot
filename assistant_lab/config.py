@@ -2,23 +2,30 @@ from pathlib import Path
 import os,sys,json
 
 ROOT=Path(__file__).resolve().parents[1]
+STATE_ROOT=Path(os.environ.get('MOMOBOT_STATE_ROOT',str(ROOT)))
+STATE_ROOT.mkdir(parents=True,exist_ok=True)
 RECON=Path('D:/BL62_Reconstruction_GUI')
 FINETUNE=Path('D:/BL62_Finetune_GUI')
-CONDA=Path(os.environ.get('LOCALAPPDATA','C:/Users/subo/AppData/Local'))/'miniforge3/envs'
+CONDA=Path(os.environ.get('BL62_CONDA_ENVS',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/'miniforge3/envs')))
 GUI_PYTHON=CONDA/'BL62_Studio/python.exe'
 RECON_PYTHON=CONDA/'tomocupy_astra/python.exe'
 SAM3_PYTHON=CONDA/'SAM3p1/python.exe'
-MODEL=Path('D:/Chcekpoints/LLM/Qwen3.8-27B-Q4_K_M.gguf')
-FALLBACK_MODEL=Path('D:/Chcekpoints/LLM/Qwen3-4B-Instruct-2507-Q4_K_M.gguf')
-RUNTIME_ROOT=ROOT/'runtime/llama-b11988'
+MODEL_DIR=Path(os.environ.get('BL62_MODEL_DIR','D:/Chcekpoints/LLM'))
+MODEL=MODEL_DIR/'Qwen3.8-27B-Q4_K_M.gguf'
+GEMMA_MODEL=MODEL_DIR/'gemma-4-26B_q4_0-it.gguf'
+DEFAULT_PROFILE='gemma4'
+VERSION='0.7.0'
+FALLBACK_MODEL=MODEL_DIR/'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
+RUNTIME_ROOT=Path(os.environ.get('MOMOBOT_RUNTIME_ROOT',str(ROOT/'runtime/llama-b11988')))
 MODEL_PROFILES={
-    'primary':dict(label='Qwen3.8-27B · GPU 1',mode='GPU 1',model_path=MODEL,context=8192),
-    'fallback':dict(label='Qwen3-4B · CPU',mode='CPU',model_path=FALLBACK_MODEL,context=4096)}
+    'gemma4':dict(label='Gemma 4 26B-A4B · Google · GPU 1',mode='GPU 1',model_path=GEMMA_MODEL,context=8192,
+        options=dict(adapter='chat',thinking='off',template_kwargs={'enable_thinking':False},max_output_tokens=768)),
+    'primary':dict(label='Qwen3.8-27B · GPU 1',mode='GPU 1',model_path=MODEL,context=8192)}
 SAM3_CHECKPOINT='D:/Chcekpoints/checkpoint_demo_05142026.pt'
 SAMPLE='D:/1_Datasets/2_Tomography/hdf5_collection/NMC811_Rod.hdf5'
 IMAGES='C:/Users/subo/Desktop/Science_data/Labeled_data/sample_2/training_dataset/images'
 
-DEFAULTS=dict(input_hdf5='',image_folder='',dataset='',output_root=str(ROOT/'outputs/jobs'),
+DEFAULTS=dict(input_hdf5='',image_folder='',dataset='',output_root=str(STATE_ROOT/'outputs/jobs'),
     checkpoint=SAM3_CHECKPOINT,resume_checkpoint='',gpu=0,center=0.0,start_row=1021,end_row=1026,
     method='fourierrec',geometry='tomography',lamino_angle=20.0,binning=0,chunk_size=4,iterations=20,
     prompt='particle',confidence=.2,nms_iou=.5,max_images=0,segment_all=False,
@@ -29,8 +36,8 @@ DEFAULTS=dict(input_hdf5='',image_folder='',dataset='',output_root=str(ROOT/'out
     distro='Ubuntu-24.04',sam3_repo='D:/SAM3p1/sam3',trial_row=None,trial_width=10.,trial_step=1.)
 
 def load_preferences():
-    try:return json.loads((ROOT/'settings.json').read_text(encoding='utf-8'))
+    try:return json.loads((STATE_ROOT/'settings.json').read_text(encoding='utf-8'))
     except (OSError,ValueError):return {}
 
 def save_preferences(value):
-    temporary=ROOT/'settings.tmp';temporary.write_text(json.dumps(value,indent=2),encoding='utf-8');temporary.replace(ROOT/'settings.json')
+    temporary=STATE_ROOT/'settings.tmp';temporary.write_text(json.dumps(value,indent=2),encoding='utf-8');temporary.replace(STATE_ROOT/'settings.json')

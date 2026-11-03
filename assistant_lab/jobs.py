@@ -2,7 +2,7 @@
 from pathlib import Path
 from datetime import datetime
 import json,os,subprocess,sys,time,uuid
-from .config import ROOT,GUI_PYTHON,RECON_PYTHON,SAM3_PYTHON,RECON,FINETUNE
+from .config import STATE_ROOT,ROOT,GUI_PYTHON,RECON_PYTHON,SAM3_PYTHON,RECON,FINETUNE
 from .protocol import validate_settings
 
 COMPUTE_ACTIONS={'inspect_data','reconstruct','find_center','analyze','try_center','try_angle','segment','prepare_dataset','train','resume_training'}
@@ -60,7 +60,7 @@ def process_alive(pid):
     finally:kernel.CloseHandle(handle)
 
 class JobStore:
-    def __init__(self,root=None):self.root=Path(root or ROOT/'test_outputs/jobs');self.root.mkdir(parents=True,exist_ok=True);self._children=[]
+    def __init__(self,root=None):self.root=Path(root or STATE_ROOT/'test_outputs/jobs');self.root.mkdir(parents=True,exist_ok=True);self._children=[]
     def list_jobs(self):
         jobs=[]
         for path in sorted(self.root.glob('*/job.json'),reverse=True):

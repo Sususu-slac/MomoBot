@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json,time,urllib.request,urllib.error,socket,subprocess,os,threading,secrets
 from pathlib import Path
-from .config import ROOT,MODEL,RUNTIME_ROOT
+from .config import STATE_ROOT,ROOT,MODEL,RUNTIME_ROOT
 from .protocol import SYSTEM,SCHEMA,parse_plan,Plan
 
 def post_json(url,payload,timeout=180,token=''):
@@ -13,13 +13,18 @@ def post_json(url,payload,timeout=180,token=''):
     except urllib.error.HTTPError as error:raise RuntimeError(f'Local model HTTP {error.code}: '+error.read().decode(errors='replace')[:1500]) from error
 
 class LocalModel:
-    def __init__(self):self.process=None;self.port=None;self.mode='CPU';self.log=None;self.started=0.;self.ready_seconds=None;self.token=''
+    def __init__(self):
+        self.process=None;self.port=None;self.mode='CPU';self.log=None;self.started=0.;self.ready_seconds=None;self.token=''
+        self.adapter='completion';self.thinking='off';self.template_kwargs={};self.max_output_tokens=512;self.sampling={'temperature':0,'seed':42}
     @property
     def base_url(self):return f'http://127.0.0.1:{self.port}'
     @property
     def running(self):return self.process is not None and self.process.poll() is None
-    def start(self,mode='GPU 1',threads=8,context=8192,model_path=MODEL):
+    def start(self,mode='GPU 1',threads=8,context=8192,model_path=MODEL,adapter='completion',thinking='off',template_kwargs=None,max_output_tokens=512,sampling=None):
         if self.running:return
+        if adapter not in ('completion','chat') or thinking not in ('off','low'):raise ValueError('Unsupported local model configuration')
+        self.adapter=adapter;self.thinking=thinking;self.template_kwargs=dict(template_kwargs or {});self.max_output_tokens=int(max_output_tokens)
+        self.sampling={'temperature':0,'seed':42,**(sampling or {})}
         model_path=Path(model_path)
         if not model_path.is_file():raise FileNotFoundError('Model file not found: '+str(model_path))
         runtime=RUNTIME_ROOT/('cpu' if mode=='CPU' else 'cuda')
@@ -28,12 +33,14 @@ class LocalModel:
         self.mode=mode;self.token=secrets.token_urlsafe(24)
         if self.log:self.log.close()
         with socket.socket() as socket_:socket_.bind(('127.0.0.1',0));self.port=socket_.getsockname()[1]
-        log_dir=ROOT/'test_outputs/model_logs';log_dir.mkdir(parents=True,exist_ok=True)
+        log_dir=STATE_ROOT/'test_outputs/model_logs';log_dir.mkdir(parents=True,exist_ok=True)
         self.log_path=log_dir/f'llama_{time.time_ns()}.log';self.log=self.log_path.open('w',encoding='utf-8')
         args=[str(candidates[0]),'-m',str(model_path),'--host','127.0.0.1','--port',str(self.port),
               '-c',str(context),'-t',str(threads),'-tb',str(threads),'-np','1','-ngl','0' if mode=='CPU' else '99',
               '--jinja','--reasoning','off','--reasoning-budget','0','--no-reasoning-preserve','--batch-size','512','--ubatch-size','128',
               '--no-context-shift','--metrics','--api-key',self.token]
+        if thinking=='low':
+            args[args.index('--reasoning')+1]='auto';args[args.index('--reasoning-budget')+1]='-1';args+=['--reasoning-effort','low']
         env=dict(os.environ);env.pop('PYTHONPATH',None);env.pop('PYTHONHOME',None)
         if mode!='CPU':env['CUDA_VISIBLE_DEVICES']=mode.split()[-1];env['CUDA_DEVICE_ORDER']='PCI_BUS_ID'
         else:env['CUDA_VISIBLE_DEVICES']=''
@@ -68,7 +75,7 @@ class LocalModel:
         validation_notice=None
         try:plan=parse_plan(raw)
         except Exception as error:
-            debug=ROOT/'test_outputs/model_errors';debug.mkdir(parents=True,exist_ok=True)
+            debug=STATE_ROOT/'test_outputs/model_errors';debug.mkdir(parents=True,exist_ok=True)
             (debug/f'{time.time_ns()}.json').write_text(json.dumps(response,indent=2),encoding='utf-8')
             if str(error).startswith('Select one Task GPU'):
                 validation_notice=str(error);plan=Plan('clarify',{},'This test GUI trains on one GPU. Please choose GPU 0 or GPU 1.')

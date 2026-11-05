@@ -28,13 +28,17 @@ def validate_job(action,s):
         if not s['input_hdf5'] or not Path(s['input_hdf5']).is_file():raise ValueError('Select an existing HDF5 file')
         if not RECON_PYTHON.is_file() or not (RECON/'backend_runner.py').is_file():raise ValueError('Reconstruction runtime/project is missing')
         if action=='reconstruct' and s['center']<=0:raise ValueError('Enter a known center, or use Find Center first')
-        if action in ('find_center','analyze') and s['geometry']!='tomography':raise ValueError('Automatic center search currently supports tomography')
         if action=='try_angle' and s['center']<=0:raise ValueError('Enter the fixed rotation center before trying lamino angles')
         if s['geometry']=='laminography' and s['method'] not in ('fourierrec','linerec'):raise ValueError('Laminography supports FourierRec or LineRec')
-    if action in ('segment','find_center','analyze','train','resume_training'):
+    if action in ('segment','find_center','analyze','train','resume_training') or action=='reconstruct' and s.get('segment_all'):
         if not s['checkpoint'] or not Path(s['checkpoint']).is_file():raise ValueError('Select the SAM3 checkpoint')
-    if action in ('segment','find_center','analyze'):
-        if not s['prompt'].strip():raise ValueError('Enter a SAM3 prompt')
+    if action in ('segment','find_center','analyze') or action=='reconstruct' and s.get('segment_all'):
+        if s.get('prompt_mode','text')=='instance':
+            import sys
+            sys.path.insert(0,str(RECON))
+            from sam3_rotation_center.exemplar import load_example
+            load_example(s.get('instance_reference',{})).validate()
+        elif not s['prompt'].strip():raise ValueError('Enter a SAM3 prompt')
         if not SAM3_PYTHON.is_file():raise ValueError('SAM3 Python runtime is missing')
     if action=='segment' and (not s['image_folder'] or not Path(s['image_folder']).is_dir()):raise ValueError('Select an image folder')
     if action in ('prepare_dataset','train','resume_training'):
@@ -82,6 +86,8 @@ class JobStore:
         folder.mkdir(exist_ok=False)
         config=dict(id=folder.name,action=action,settings=settings,submitted_at=datetime.now().isoformat(),
                     plan=plan or {},job_dir=str(folder))
+        if settings.get('input_hdf5'):
+            stat=Path(settings['input_hdf5']).stat();config['source_stat']=[stat.st_size,stat.st_mtime_ns]
         atomic_json(folder/'job.json',config)
         log=(folder/'worker.log').open('w',encoding='utf-8')
         argv=[str(GUI_PYTHON),str(ROOT/'worker.py'),'--job',str(folder/'job.json')]

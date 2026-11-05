@@ -30,3 +30,5 @@ test_outputs/
 desktop_*/
 __pycache__/
 *.pyc
+
+reconstruction_backend/

@@ -19,7 +19,11 @@ from .quick_replies import quick_reply,greeting_sticker
 from .visual_assets import APP_ICON,sticker_pixmap
 from .telegram_ui import TelegramController
 from .task_recovery import recover_task
+from .reconstruction_sop import ReconstructionSOP
 from bl62_theme import ThemeController
+
+def control_input(text):
+    return text.lower().strip(' .!。！') in ('stop','safe stop','cancel task','stop the task','停止','停下','停止任务','cancel','pause','取消','暂停','status','progress','进度')
 
 STYLE='''QWidget{background:#101720;color:#e7edf4;font-family:Segoe UI;font-size:14px}
 QWidget#sidebar{background:#151e29} QLabel#brand{font-size:20px;font-weight:700}
@@ -98,11 +102,15 @@ class ChatWindow(QMainWindow):
             previous=json.dumps(t,ensure_ascii=False,sort_keys=True)
             t['settings']={**DEFAULTS,**t['settings']}
             records=result_context(t)
+            saved_gpu=t['settings']['gpu']
             recover_task(t,records)
+            if t.get('sop',{}).get('enabled'):t['settings']['gpu']=saved_gpu
             if previous!=json.dumps(t,ensure_ascii=False,sort_keys=True):self.repo.save(t)
         self.stores={str(self.store.root.resolve()):self.store}
         for t in self.tasks.values():
             for job in t['jobs']:self.store_for(Path(job['job_dir']).parent)
+        self.sop=ReconstructionSOP(self)
+        for task in self.tasks.values():self.sop.restore(task)
         self.current_id=None;self.model=ChatModel();self.busy=False;self.threads=[];self.model_ready=False;self.progress_key=None
         self.default_gpu=0;self.closing=False
         self.model_profile=load_preferences().get('model_profile',DEFAULT_PROFILE)
@@ -359,6 +367,7 @@ class ChatWindow(QMainWindow):
     def advance(self,task,reply):
         if self.closing or task.get('_deleted') or task['id'] not in self.tasks:return
         if self.busy:QTimer.singleShot(50,lambda:self.advance(task,reply));return
+        if self.sop.guard_advance(task):return
         if task.get('cancel_requested'):
             entry=find_entry(task,reply)
             if entry:entry['text']=say(task,'Request cancelled before execution.','请求已取消，未开始执行。');finish_activity(task,reply)
@@ -383,13 +392,15 @@ class ChatWindow(QMainWindow):
     def send(self):
         text=self.composer.toPlainText().strip();task=self.current
         if not text or not task:return
-        if self.busy and quick_reply(text) is None:return
+        if self.busy and quick_reply(text) is None and not control_input(text):return
         self.composer.clear();task['draft']=''
         self.submit_text(task,text)
     def submit_text(self,task,text,remote=False):
         if not task or task.get('_deleted'):return
         instant=quick_reply(text)
-        if self.closing or not text.strip() or self.busy and instant is None:return
+        control_text=text.lower().strip(' .!。！')
+        busy_control=control_text in ('stop','safe stop','cancel task','stop the task','停止','停下','停止任务','cancel','pause','取消','暂停','status','progress','进度')
+        if self.closing or not text.strip() or self.busy and instant is None and not busy_control:return
         if chinese(text):task['language']='zh'
         elif len(text.split())>=3 and not (':' in text and '\\' in text):task['language']='en'
         self.add(task,'user',text)
@@ -401,15 +412,22 @@ class ChatWindow(QMainWindow):
         if lowered in ('status','progress','show progress','进度','现在怎么样了'):self.show_status(task);return
         request=execution_intent(text,task.get('awaiting_confirmation',False))
         query=query_type(text)
+        if query=='time' and self.sop.enabled(task) and task['sop'].get('phase')=='confirm':
+            from .reconstruction_sop import estimate
+            self.sop.tell(task,estimate(task));return
         if query and not request and (task['jobs'] or query.startswith('open_') or __import__('re').search(r'result|结果|did.*find|already.*search',lowered)):
             self.add(task,'assistant','');rid=task['messages'][-1]['id'];task['reply_id']=rid
             activity(task,rid,say(task,'Reading the saved task results','正在读取已保存的任务结果'));self.render()
             def result_ready(value):
                 answer,path=value;find_entry(task,rid)['text']=answer;finish_activity(task,rid);self.save(task);self.render_if_current(task)
                 if path:
-                    if remote and self.telegram.bridge:self.telegram.bridge.send_image(path)
+                    if remote and self.telegram.bridge and Path(path).is_file():self.telegram.bridge.send_image(path)
                     elif not remote:QDesktopServices.openUrl(QUrl.fromLocalFile(path))
             self.background(lambda:answer_result(task,query),result_ready,task['id']);return
+        try:
+            if self.sop.handle(task,text,remote):return
+        except (ValueError,OSError) as error:
+            self.sop.reject(task,error);return
         if task['jobs'] and __import__('re').search(r'result.*(?:correct|right)|looks correct|结果.*(?:是对的|正确|没问题)|这个是正确答案',text.lower()) and '?' not in text and '？' not in text:
             task['jobs'][-1]['user_review']={'status':'accepted','message':text,'time':__import__('datetime').datetime.now().isoformat()};self.save(task)
         if request and lowered in ('start','run','go ahead','yes','ok','okay','开始','开始吧','执行','运行','确认','好的','可以') and task['kind']:
@@ -425,6 +443,8 @@ class ChatWindow(QMainWindow):
             if task.get('cancel_requested'):
                 find_entry(task,reply)['text']=say(task,'Request cancelled before execution.','请求已取消，未开始执行。');finish_activity(task,reply);self.save(task);self.render_if_current(task);return
             plan,control,meta=result
+            if self.sop.enabled(task):
+                entry=find_entry(task,reply);entry['text']=plan.message;finish_activity(task,reply);self.save(task);self.render_if_current(task);return
             low=text.lower().strip(' .!。！');current=ready_step(task)
             if request and __import__('re').search(r'\b(trial|sweep|jitter)\b|抖动|试重建|自己挑|自己选',low):
                 plan.action='try_angle' if __import__('re').search(r'lamino.*angle|angle.*lamino|角度',low) else 'try_center';control['center_mode']='unchanged'
@@ -476,12 +496,13 @@ class ChatWindow(QMainWindow):
         self.background(lambda:self.model.converse(text,captured),done,identity)
 
     def update_send_enabled(self):
-        self.send_btn.setEnabled(self.current is not None and (not self.busy or quick_reply(self.composer.toPlainText()) is not None))
+        self.send_btn.setEnabled(self.current is not None and (not self.busy or quick_reply(self.composer.toPlainText()) is not None or control_input(self.composer.toPlainText())))
         self.attach_btn.setEnabled(self.current is not None and not self.busy)
         self.delete_btn.setEnabled(self.current is not None)
 
     def start_task(self,task,reply=None):
         if task.get('_deleted') or task['id'] not in self.tasks:return
+        if not self.sop.before_start(task):return
         if ready_step(task)!='ready':self.guide(task);return
         try:
             if any(store.active() for store in self.stores.values()):raise ValueError('Another task is running. Open it in the task list, or wait for it to finish.')
@@ -490,7 +511,7 @@ class ChatWindow(QMainWindow):
             job=store.submit(action(task),settings,dict(conversation_id=task['id'],review=review(task)))
             if task['kind']=='train' and job['action']=='prepare_dataset':task['continue_training']=True
             reply=reply or task.get('reply_id')
-            task['jobs'].append(dict(id=job['id'],job_dir=job['job_dir'],action=job['action'],reported=False,reply_id=reply));task['state']='running';task['run_requested']=False;task['awaiting_confirmation']=False
+            task['jobs'].append(dict(id=job['id'],job_dir=job['job_dir'],action=job['action'],reported=False,reply_id=reply,sop_stage=task.get('sop',{}).get('active_stage') if task.get('sop',{}).get('phase')=='dispatch' else None,source_stat=task.get('sop',{}).get('source_stat')));task['state']='running';task['run_requested']=False;task['awaiting_confirmation']=False
             summary=say(task,'Started ','已启动：')+TITLES.get(job['action'],job['action'])
             summary+=f"\nGPU {settings['gpu']} · "+('prompt '+settings['prompt'] if job['action']=='segment' else f"rows [{settings['start_row']}, {settings['end_row']})" if job['action'] in ('reconstruct','analyze') else '')
             if job['action']=='train':summary+=f"\n{settings['epochs']} epoch(s) · batch {settings['batch_size']}"
@@ -507,6 +528,8 @@ class ChatWindow(QMainWindow):
         if self.current_id==task['id']:self.render()
     def stop_task(self,task):
         task['cancel_requested']=True;task['run_requested']=False
+        if self.sop.enabled(task) and task['sop']['phase']=='reading':
+            self.sop.phase(task,'paused');self.add(task,'assistant',say(task,'Cancelled the pending file request. No reconstruction has started.','已取消文件读取请求，尚未开始重建。'));self.render_if_current(task);return
         job=self.latest(task)
         if job and task['state'] in ('running','stopping'):
             self.store_for(Path(job['job_dir']).parent).stop(job);task['state']='stopping';self.add(task,'assistant','Safe Stop requested. Waiting for this task to stop.');self.refresh_list()
@@ -530,6 +553,8 @@ class ChatWindow(QMainWindow):
                     if old!=json.dumps(entry.get('activity',[]))+str(entry.get('progress')):self.save(task);changed=True
                 continue
             job['reported']=True;job['final_state']=state;changed=True
+            if self.sop.completed(task,job,s):
+                self.save(task);continue
             if state=='succeeded':
                 result=s.get('result',{});center=result.get('recommended_center',result.get('center_search',{}).get('recommended_center'))
                 if center is not None:task['settings']['center']=float(center);task['center_mode']='known'

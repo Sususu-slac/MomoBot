@@ -21,6 +21,23 @@ def explicit_answer(text,task):
     if task['kind'] in ('try_center','try_angle') and re.search(r'\bmiddle\s+(?:detector\s+)?(?:slice|row)\b|中间(?:的)?(?:一)?层',text,re.I):
         # Keep the user's literal "middle" choice, independent of a model's numeric guess.
         updates['trial_row']=None
+    if task['kind'] in ('reconstruct','analyze','find_center','try_center','try_angle'):
+        # A literal requested geometry must replace the previous task's mode.
+        # Paths are already stripped; directory names cannot select geometry.
+        geometry_names={'tomo':'tomography','tomography':'tomography','lamino':'laminography','laminography':'laminography'}
+        named=set()
+        for match in re.finditer(r'\b(?:tomography|tomo|laminography|lamino)\b(?!\s+(?:angle|tilt)\b)',text,re.I):
+            prefix=text[max(0,match.start()-35):match.start()]
+            if re.search(r"(?:\b(?:not|no|never|avoid|disable)\s+(?:(?:use|using|a|an)\s+)?|\b(?:do\s+not|don't)\s+(?:use\s+|using\s+)?|(?:不要|不用|非)\s*)$",prefix,re.I):continue
+            named.add(geometry_names[match.group(0).lower()])
+        if len(named)==1:updates['geometry']=named.pop()
+        # Explicit detector binning wins over a model's guessed exponent.
+        factor=None
+        for pattern in (r'\b([1248])\s*[x×*]\s*\1\s*(?:binning|bin\b|合并)',
+                        r'(?:\bbinning\b|合并)\s*(?:to|is|=|:|为|是|[:：])?\s*([1248])\s*[x×*]\s*\1\b'):
+            match=re.search(pattern,text,re.I)
+            if match:factor=int(match[1]);break
+        if factor is not None:updates['binning']={1:0,2:1,4:2,8:3}[factor]
     patterns={
       'gpu':r'\bgpu\s*(?:to|is|=|:)?\s*(\d+)\b',
       'epochs':r'\b(\d+)\s*epochs?\b',

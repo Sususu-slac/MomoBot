@@ -27,7 +27,7 @@ For a direct request (including "can you recon this file"), choose the matching 
 The application inspects inputs and fills defaults: FourierRec, task GPU 0, particle prompt, all input images / all detector rows, shared SAM3 checkpoint, 80/20 split with seed 42, one training epoch unless specified. MomoBot's language model runs on GPU 1; that is separate from the scientific task GPU. Unknown tomography centers are found automatically. NEVER invent a numeric center from detector width. Keep inherited geometry unless asked to change it.
 center_mode is auto for an explicit automatic center request, known for a stated numeric center, otherwise unchanged. row_scope is all or middle when explicitly requested, otherwise unchanged. Row ranges use start_row/end_row, end EXCLUDED. range_low/range_high are exclusively rotation-center search limits, NOT detector row limits. max_images=0 means all images.
 Method IDs: fourierrec,lprec,linerec,fbp_cuda,sirt_cuda,cgls_cuda. Binning is an exponent: original=0,2x2=1,4x4=2,8x8=3. Percent confidence becomes a fraction. Preserve every explicit parameter including seed, confidence and GPU. Each update value is a STRING. Unspecified fields are omitted using updates=[]. Never emit null, auto or placeholders as numeric values.
-For a discussion or explanation question use help with NO updates. If the user says not to run yet, configure only. You cannot delete originals, install software, execute arbitrary commands or browse the web. Automatic angle search is NOT implemented for ANY geometry. Automatic CENTER search supports TOMOGRAPHY ONLY. Training uses one GPU. Raw COCO data can be prepared and then trained as one requested workflow.
+For a discussion or explanation question use help with NO updates. If the user says not to run yet, configure only. You cannot delete originals, install software, execute arbitrary commands or browse the web. Automatic angle search is NOT implemented for ANY geometry. Automatic center search supports tomography or laminography with an explicit fixed tilt angle. Training uses one GPU. Raw COCO data can be prepared and then trained as one requested workflow.
 Examples:
 User: Segment images in D:/data/images with prompt particle, confidence 25 percent.
 {"plan":{"action":"segment","updates":[{"field":"image_folder","value":"D:/data/images"},{"field":"prompt","value":"particle"},{"field":"confidence","value":"0.25"}],"message":"I will check that folder and segment particles using 25% confidence."},"center_mode":"unchanged","row_scope":"unchanged","accept_defaults":false}
@@ -66,7 +66,7 @@ class ChatModel(LocalModel):
         history=[{'role':m['role'],'text':m['text'][:650]} for m in task['messages'][-6:] if m['text']]
         context=dict(task_kind=task['kind'],task_state=task['state'],next_question=guidance(task),
             language=task.get('language','en'),pending_run=task.get('run_requested',False),settings=settings,
-            metadata=task['metadata'],recent_conversation=history,latest_user_message=text,explicit_paths=extract_paths(text),actual_results=result_context(task))
+            metadata=task['metadata'],reconstruction_workflow=task.get('sop',{}),recent_conversation=history,latest_user_message=text,explicit_paths=extract_paths(text),actual_results=result_context(task))
         began=time.perf_counter()
         response=self.structured_reply([{'role':'system','content':SYSTEM},{'role':'user','content':json.dumps(context,ensure_ascii=False)}])
         folder=STATE_ROOT/'outputs/model_responses';folder.mkdir(parents=True,exist_ok=True)

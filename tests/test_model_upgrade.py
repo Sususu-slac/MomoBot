@@ -66,7 +66,7 @@ class RecoveryAndGpuTests(unittest.TestCase):
   t=task();t['settings']['center']=0;recover_task(t,[{'source':'D:/different.hdf5','recommended_center':777},{'source':'file:///D:/old.hdf5','recommended_center':888}]);self.assertEqual(t['settings']['center'],888)
   t['settings']['center']=999;recover_task(t,[{'source':'D:/old.hdf5','recommended_center':888}]);self.assertEqual(t['settings']['center'],999)
  def test_launch_environment_isolated_to_gpu1_and_scientific_defaults_gpu0(self):
-  self.assertEqual(DEFAULTS['gpu'],0);self.assertEqual(MODEL_PROFILES['primary']['mode'],'GPU 1')
+  self.assertEqual(DEFAULTS['gpu'],0);self.assertEqual(MODEL_PROFILES['gemma4']['mode'],'GPU 1')
   original=os.environ.get('CUDA_VISIBLE_DEVICES')
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp);runtime=root/'runtime/cuda';runtime.mkdir(parents=True);(runtime/'llama-server.exe').write_bytes(b'fake');model=root/'test.gguf';model.write_bytes(b'fake')

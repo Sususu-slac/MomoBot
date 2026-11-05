@@ -32,6 +32,31 @@ class AdapterTests(unittest.TestCase):
  def test_supported_requests_and_negative_deletion_constraints_are_not_blocked(self):
   for command in ['Automatically find the rotation center with fixed lamino angle 20.','Generate angle trial reconstructions automatically so I can choose.','Segment images, do not delete the originals.','Reconstruct data and remove stripes.','自动寻找旋转中心，使用倾斜角20度。','分割图片，不要删除原始图片。']:
    with self.subTest(command=command):self.assertIsNone(unsupported_request(command))
+ def test_explicit_geometry_replaces_inherited_mode_even_when_model_omits_it(self):
+  from assistant_lab.answer_bindings import explicit_answer
+  task=new_task();choose_kind(task,'reconstruct');task['settings']['geometry']='laminography'
+  for command,expected in [('Reconstruct using tomography.','tomography'),('Use tomo.','tomography'),('Use laminography.','laminography'),('Reconstruct with lamino.','laminography')]:
+   self.assertEqual(explicit_answer(command,task)[0]['geometry'],expected)
+  self.assertNotIn('geometry',explicit_answer('Reconstruct D:/tomography/data.h5',task)[0])
+  self.assertNotIn('geometry',explicit_answer('Compare tomography and laminography.',task)[0])
+  self.assertNotIn('geometry',explicit_answer('Do not use laminography.',task)[0])
+  self.assertEqual(explicit_answer('Use tomography, not laminography.',task)[0]['geometry'],'tomography')
+  packet={'plan':{'action':'reconstruct','updates':[],'message':'Use tomography.'},'center_mode':'known','row_scope':'unchanged','accept_defaults':False}
+  with tempfile.TemporaryDirectory() as tmp,patch('assistant_lab.chat_model.STATE_ROOT',Path(tmp)),patch.object(ChatModel,'structured_reply',return_value={'content':json.dumps(packet)}):
+   plan,_,meta=ChatModel().converse('Reconstruct using tomography.',task)
+  self.assertEqual(plan.updates['geometry'],'tomography');self.assertIn('Verified explicit geometry',meta['normalizations'])
+ def test_explicit_binning_factor_overrides_model_exponent(self):
+  from assistant_lab.answer_bindings import explicit_answer
+  for factor,exponent in [(1,0),(2,1),(4,2),(8,3)]:
+   for text in [f'Reconstruct with {factor}x{factor} binning.',f'Binning {factor}×{factor}',f'{factor}×{factor}合并']:
+    task=new_task();choose_kind(task,'reconstruct')
+    self.assertEqual(explicit_answer(text,task)[0]['binning'],exponent)
+  task=new_task();choose_kind(task,'reconstruct')
+  self.assertNotIn('binning',explicit_answer('Image dimensions 8x8; use D:/8x8_binning/input.h5',task)[0])
+  packet={'plan':{'action':'reconstruct','updates':[{'field':'binning','value':'2'}],'message':'Run reconstruction.'},'center_mode':'unchanged','row_scope':'unchanged','accept_defaults':False}
+  with tempfile.TemporaryDirectory() as tmp,patch('assistant_lab.chat_model.STATE_ROOT',Path(tmp)),patch.object(ChatModel,'structured_reply',return_value={'content':json.dumps(packet)}):
+   plan,_,meta=ChatModel().converse('Reconstruct using 8x8 binning.',task)
+  self.assertEqual(plan.updates['binning'],3);self.assertIn('Verified explicit binning',meta['normalizations'])
  def test_literal_middle_trial_slice_remains_optional_not_a_numeric_word(self):
   task=new_task();choose_kind(task,'try_angle');task['settings']['center']=1028.5
   packet={'plan':{'action':'try_angle','updates':[{'field':'trial_row','value':'middle'}],'message':'Prepare one middle slice.'},'center_mode':'unchanged','row_scope':'unchanged','accept_defaults':False}
@@ -47,7 +72,7 @@ class ModelPickerTests(unittest.TestCase):
   with patch('assistant_lab.chat_window.load_preferences',return_value={}):self.window=ChatWindow(Conversations(root/'conversations'),JobStore(root/'jobs'),autoload=False)
  def tearDown(self):self.window.close();self.app.processEvents();self.tmp.cleanup()
  def test_switches_and_persists_available_models(self):
-  self.assertTrue(2<=len(MODEL_PROFILES)<=3)
+  self.assertEqual(list(MODEL_PROFILES),['gemma4'])
   for key,profile in MODEL_PROFILES.items():
    with patch('assistant_lab.chat_window.QInputDialog.getItem',return_value=(profile['label'],True)),patch('assistant_lab.chat_window.Path.is_file',return_value=True),patch('assistant_lab.chat_window.save_preferences') as save,patch.object(self.window,'load_model') as load:
     self.window.select_language_model();self.assertEqual(self.window.model_profile,key);self.assertEqual(save.call_args.args[0]['model_profile'],key);load.assert_called_once_with(restart=True)

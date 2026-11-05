@@ -177,7 +177,7 @@ def inspect_source(field,value):
         import sys
         from .config import RECON
         sys.path.insert(0,str(RECON));from ct_recon_gui.hdf5_inspector import inspect_hdf5
-        info=inspect_hdf5(p);return dict(rows=info.data_shape[1],width=info.data_shape[2],projections=info.data_shape[0])
+        info=inspect_hdf5(p);return dict(rows=info.data_shape[1],width=info.data_shape[2],projections=info.data_shape[0],dtype=info.data_dtype,size_bytes=p.stat().st_size,theta_min=info.theta_min,theta_max=info.theta_max,theta_unit=info.theta_unit,white_shape=list(info.white_shape),dark_shape=list(info.dark_shape))
     if field=='image_folder':
         if not p.is_dir():raise ValueError('Choose an existing image folder')
         n=sum(f.is_file() and f.suffix.lower() in ('.png','.tif','.tiff','.jpg','.jpeg','.bmp') for f in p.iterdir())

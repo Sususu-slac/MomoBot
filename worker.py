@@ -7,6 +7,11 @@ sys.path.insert(0,str(ROOT))
 from assistant_lab.config import RECON,FINETUNE,RECON_PYTHON,SAM3_PYTHON
 from assistant_lab.jobs import atomic_json,read_json,validate_job
 
+def preprocessing_args(settings):
+    sys.path.insert(0,str(RECON))
+    from ct_recon_gui.preprocessing import argv
+    return argv(settings)
+
 class Cancelled(Exception):pass
 
 def wsl(path):
@@ -102,6 +107,7 @@ class Worker:
               '--center',str(s['center']),'--gpu',str(s['gpu']),'--binning',str(s['binning']),
               '--chunk-size',str(s['chunk_size']),'--nsino-per-chunk',str(s['chunk_size']),
               '--iterations',str(s['iterations']),'--lamino-angle',str(s['lamino_angle'])]
+        args += preprocessing_args(s)
         if s['method']=='lprec':args.append('--accept-uniform-angle-approximation')
         total=(s['end_row']-s['start_row'])//(2**s['binning'])
         def progress():self.emit(completed=len(list(folder.rglob('*.tiff'))),total=total)
@@ -111,7 +117,14 @@ class Worker:
         # Confirm actual numeric output, not only a zero return code.
         verify='import sys,tifffile,numpy as np;a=tifffile.imread(sys.argv[1]);assert a.ndim==2 and np.isfinite(a).all() and np.ptp(a)>0;print("VERIFIED",a.shape,a.dtype)'
         self.run_child([str(RECON_PYTHON),'-c',verify,str(files[len(files)//2])],'Verifying reconstruction')
-        return dict(slices=len(files),folder=str(folder),center=s['center'],binning=s['binning'])
+        result=dict(slices=len(files),folder=str(folder),center=s['center'],binning=s['binning'])
+        if s.get('segment_all'):
+            self.check();self.emit(phase='Reconstruction completed — segmenting all data')
+            s['image_folder']=str(folder);saved_action=self.action;self.action='segment'
+            try:segmentation=self.sam()
+            finally:self.action=saved_action
+            result.update(segmented_images=segmentation['images'],segmentation_folder=segmentation['folder'])
+        return result
     def images(self):
         folder=Path(self.s['image_folder'])
         if not folder.is_dir():raise ValueError('Image folder does not exist')
@@ -127,7 +140,7 @@ class Worker:
         angle=self.action=='try_angle';lamino=angle or s['geometry']=='laminography'
         center=s['center'] or (width-1)/2
         method='lamino_linerec' if lamino else s['method']
-        if not lamino and method not in ('fourierrec','linerec','lprec'):raise ValueError('Trial reconstruction uses FourierRec, LineRec or LpRec')
+        if not lamino and method not in ('fourierrec','linerec','lprec'):method='fourierrec'
         folder=self.output/'trial_reconstructions';folder.mkdir()
         args=[str(RECON_PYTHON),str(RECON/'backend_runner.py'),method,s['input_hdf5'],str(folder),
               '--reconstruction-type','try','--search-kind','angle' if angle else 'center',
@@ -136,6 +149,7 @@ class Worker:
               '--lamino-angle',str(s['lamino_angle']),
               '--lamino-search-width' if angle else '--center-search-width',str(s.get('trial_width',2 if angle else 10)),
               '--lamino-search-step' if angle else '--center-search-step',str(s.get('trial_step',.25 if angle else 1))]
+        args += preprocessing_args(s)
         if method=='lprec':args.append('--accept-uniform-angle-approximation')
         def progress():self.emit(completed=len(list(folder.rglob('*.tiff'))),total=0)
         self.run_child(args,'Generating angle candidates on one slice' if angle else 'Generating center candidates on one slice',progress)
@@ -143,14 +157,18 @@ class Worker:
         if len(files)<2:raise RuntimeError('Trial search did not produce at least two candidate TIFFs; increase the width or reduce the step')
         verify='import sys,tifffile,numpy as np;a=tifffile.imread(sys.argv[1]);assert a.ndim==2 and np.isfinite(a).all() and np.ptp(a)>0;print("VERIFIED_CANDIDATE",a.shape)'
         self.run_child([str(RECON_PYTHON),'-c',verify,str(files[len(files)//2])],'Verifying candidate images')
-        result=dict(folder=str(folder),candidates=len(files),trial_row=row,search_kind='angle' if angle else 'center',
+        from assistant_lab.trial_candidates import catalogue
+        candidate_catalogue=catalogue(files,folder/'numbered_previews',check=self.check)
+        result=dict(candidate_catalogue=candidate_catalogue,preview_folder=str(folder/'numbered_previews'),folder=str(folder),candidates=len(files),trial_row=row,search_kind='angle' if angle else 'center',
                     anchor=s['lamino_angle'] if angle else center,half_width=s['trial_width'],step=s['trial_step'],
                     selection='User selects the best candidate; no automatic scoring was performed',files=[str(p) for p in files])
         atomic_json(folder/'trial_manifest.json',result);return result
     def sam_config(self):
         s=self.s
         cfg={**s,'output':str(self.output),'input':s['input_hdf5'],'repo':s['sam3_repo'],
-             'recon_python':str(RECON_PYTHON),'sam3_python':str(SAM3_PYTHON),'search_method':'fourierrec','refresh_seconds':3}
+             'recon_python':str(RECON_PYTHON),'sam3_python':str(SAM3_PYTHON),
+             'search_method':'linerec' if s['geometry']=='laminography' else 'fourierrec','refresh_seconds':3}
+        if s['geometry']=='laminography':cfg['method']='lamino_'+s['method']
         atomic_json(self.folder/'sam_job.json',cfg);return self.folder/'sam_job.json'
     def sam(self):
         cfg_path=self.sam_config()

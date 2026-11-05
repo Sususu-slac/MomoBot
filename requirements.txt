@@ -7,3 +7,5 @@ pycocotools
 PyYAML
 psutil
 qrcode>=8.2,<9
+
+tifffile

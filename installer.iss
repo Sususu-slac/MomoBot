@@ -1,7 +1,7 @@
 [Setup]
 AppId={{A4E3A1A5-7A5D-47B9-A60B-57530AAEA673}
 AppName=MomoBot
-AppVersion=0.7.0
+AppVersion=0.8.0
 AppPublisher=BL62
 AppPublisherURL=https://github.com/Sususu-slac/MomoBot
 DefaultDirName={localappdata}\Programs\MomoBot
@@ -9,7 +9,7 @@ DefaultGroupName=MomoBot
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 OutputDir=release
-OutputBaseFilename=MomoBot_Setup_0.7.0
+OutputBaseFilename=MomoBot_Setup_0.8.0
 SetupIconFile=assets\momobot-orange-kitten.ico
 UninstallDisplayIcon={app}\assets\momobot-orange-kitten.ico
 Compression=lzma2

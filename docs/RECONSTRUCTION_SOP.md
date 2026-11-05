@@ -1,0 +1,33 @@
+# Reconstruction chat workflow — MomoBot 0.8.0
+
+Paste an HDF5 file path or a folder containing HDF5 files. MomoBot reads projection count, detector dimensions, dtype, file size, theta range and flat/dark shapes before planning computation. If a folder contains several files, choose one by its displayed number. Unquoted Windows HDF5 paths containing spaces are supported.
+
+Specify Tomography or Laminography. MomoBot asks when geometry is unspecified: both acquisitions may contain theta, so theta alone cannot select the geometry. Laminography needs the signed, nonzero acquisition tilt angle; negative angles are preserved. Flat/dark correction must match the acquisition. This chat workflow currently uses the input HDF5’s flat/dark frames; a request for a separate external flat file is explicitly rejected rather than interpreting it as another input.
+
+## Traditional reconstruction
+
+Ask for manual/traditional reconstruction. MomoBot offers a trial center range, step and middle detector row. The range is a starting proposal, not a measured center. You can change it before saying generate candidates. Angle trials instead require a fixed center and a tilt range. Automatic angle scoring is not implemented. ASTRA full reconstruction can use FourierRec trial images while retaining the selected full method.
+
+After the sweep finishes, a folder opens with numbered PNG previews and candidate_index.csv. Numbering is one-based and follows numeric parameter order. Choose by image number, ordinal, center/angle value or actual saved filename. Ambiguous numbers and multiple choices cause a clarification. MomoBot never guesses which image looks sharpest.
+
+A selected center or angle produces a full reconstruction review, not immediate execution. The review contains source, geometry/tilt, method, center, GPU, row range, binning, expected TIFF size, preprocessing, output parent and estimated time. Output goes into a new task directory. Confirm once to execute. A complete explicit command skips questions for values already supplied and still requires that one confirmation. Edits invalidate the prior confirmation.
+
+## Automatic center search
+
+Choose automatic center search, then name the feature, such as particle. For an instance example, say instance and select an image; paint the mask in the existing reconstruction editor. Reference images can differ from the reconstructed candidate images. On Telegram, provide the example image and binary-mask paths on the computer, or use text prompting. Cancelling the editor permits switching back to text.
+
+Only find center means only search: the center is saved and MomoBot waits. A subsequent reconstruct instruction opens a review of the saved center. An explicit automatic-search-and-reconstruct request reviews the whole workflow once. Segment All is included only when requested. A known-center reconstruction can also include segmentation; MomoBot asks for the feature when missing and includes segmentation in the confirmation.
+
+The current reconstruction GUI’s confidence-weighted SAM3 scoring and cumulative Gaussian refinement are reused. No new scoring formula is introduced.
+
+## Timing, failure and continuation
+
+A matching measured run or explicit few-slice timing pilot provides a rough runtime range. Timing records include the source size/mtime and relevant reconstruction/preprocessing settings. Otherwise MomoBot says a reliable estimate is unavailable; it does not invent a duration. Automatic search and optional segmentation add time.
+
+Changing the input resets geometry, center, prompt/example and confirmation. The same file being overwritten invalidates the confirmation. A rejected edit cannot partly update a plan or launch it via a stale yes. Cancel pauses planning; Safe Stop requests cancellation of this job. Partial results remain on disk. Retry starts with a new review/offer and a new output folder. Failed trials never become full reconstruction automatically. Restarting the GUI restores the phase and active jobs; it never starts an unfinished confirmation on its own.
+
+Ask what center was used, which slice was searched, how long it took, where the results are, or to open the saved result/curve. Answers use saved jobs matched to the current input. An unset zero is never reported as a computed center. A user-selected trial center is distinguished from an automatically scored center.
+
+After reconstruction, segment these results creates a separate segmentation task using the saved reconstruction folder, preserving the reconstruction history. Training requests create a separate task and ask for the labeled training dataset. Scientific workers remain independent of the chat window.
+
+Requires the current BL62 Reconstruction source/backend (1.2.6 or newer). BL62_RECON_ROOT can select its source directory. Models, environments, data and private chats are external to the Windows launcher release.

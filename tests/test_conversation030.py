@@ -64,12 +64,19 @@ class ChatRenderTests(unittest.TestCase):
   with patch.object(self.w.store,'submit',side_effect=AssertionError('Query must not submit')):
    self.w.composer.setPlainText('What rotation center did you find?');self.w.send();self.pump(.4)
   self.assertIn('1017',task['messages'][-1]['text']);self.assertFalse(self.w.busy)
- def test_chat_request_for_center_and_all_rows_routes_to_analyze(self):
+ def test_clear_auto_request_reviews_before_confirmed_analyze(self):
   task=self.w.current;task['settings']['output_root']=str(self.root/'jobs');mark(task,'checkpoint');fake=Mock();fake.running=True
   fake.converse.return_value=(Plan('analyze',{'input_hdf5':'D:/valid.hdf5','prompt':'particle'},'I will find the center and reconstruct.'),{'center_mode':'auto','row_scope':'all','accept_defaults':False},{'seconds':.1})
   job={'id':'owned','job_dir':str(self.root/'jobs/owned'),'action':'analyze'};self.w.model_ready=True
-  with patch.object(self.w,'model',fake),patch('assistant_lab.chat_window.inspect_source',return_value={'rows':128,'width':128,'projections':91}),patch('assistant_lab.chat_window.JobStore.submit',return_value=job) as submit:
-   self.w.composer.setPlainText('Find the center and reconstruct all rows for D:/valid.hdf5 using particle.');self.w.send();self.pump(1)
+  import h5py,numpy as np
+  source=self.root/'auto.h5'
+  with h5py.File(source,'w') as h:
+   h['exchange/data']=np.ones((7,128,128),np.uint16);h['exchange/data_white']=np.ones((1,128,128),np.uint16)*2;h['exchange/data_dark']=np.zeros((1,128,128),np.uint16);h['exchange/theta']=np.arange(7,dtype=np.float32)*30
+  with patch.object(self.w,'model',fake),patch('assistant_lab.chat_window.JobStore.submit',return_value=job) as submit:
+   self.w.submit_text(task,f'Automatically reconstruct all rows for "{source}" using tomography, prompt particle.');self.pump(.6)
+   self.assertEqual(task['sop']['phase'],'confirm');submit.assert_not_called()
+   self.w.submit_text(task,'yes');self.pump(.3)
   self.assertEqual(task['state'],'running');self.assertEqual(submit.call_args.args[0],'analyze');self.assertEqual(submit.call_args.args[1]['start_row'],0);self.assertEqual(submit.call_args.args[1]['end_row'],128)
+
 
 if __name__=='__main__':unittest.main()

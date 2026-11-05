@@ -41,7 +41,7 @@ class MascotChat(unittest.TestCase):
  def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
  def test_greeting_replies_render_and_persist_without_inference_or_jobs(self):
   with tempfile.TemporaryDirectory() as tmp:
-   root=Path(tmp);repo=Conversations(root/'conversations');window=ChatWindow(repo,JobStore(root/'jobs'),autoload=False,model_first=False);window.show();self.app.processEvents();task=window.current
+   root=Path(tmp);repo=Conversations(root/'conversations');window=ChatWindow(repo,JobStore(root/'jobs'),autoload=False,model_first=False);window.new_task();window.show();self.app.processEvents();task=window.current
    fake=Mock();fake.running=True;window.model_ready=True
    with patch.object(window,'model',fake),patch.object(window.store,'submit',side_effect=AssertionError('Greeting must not launch science')):
     for text in ('Hi','hello..','你好'):
@@ -50,7 +50,7 @@ class MascotChat(unittest.TestCase):
    saved=repo.all()[0];self.assertEqual(sum(m.get('sticker')=='kitten_hi' for m in saved['messages']),3);self.assertFalse(saved['jobs']);window.close();self.app.processEvents()
  def test_hi_is_immediate_while_loading_and_does_not_uncancel_a_task(self):
   with tempfile.TemporaryDirectory() as tmp:
-   root=Path(tmp);window=ChatWindow(Conversations(root/'conversations'),JobStore(root/'jobs'),autoload=False,model_first=False);window.show();window.busy=True;task=window.current;task['cancel_requested']=True
+   root=Path(tmp);window=ChatWindow(Conversations(root/'conversations'),JobStore(root/'jobs'),autoload=False,model_first=False);window.new_task();window.show();window.busy=True;task=window.current;task['cancel_requested']=True
    window.composer.setPlainText('Hi');self.assertTrue(window.send_btn.isEnabled());window.send();self.app.processEvents();self.assertEqual(task['messages'][-1]['sticker'],'kitten_hi');self.assertTrue(task['cancel_requested']);self.assertFalse(task['jobs']);window.busy=False;window.close();self.app.processEvents()
 
 if __name__=='__main__':unittest.main()

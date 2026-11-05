@@ -86,7 +86,7 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app=QApplication.instance() or QApplication([]);QFontDatabase.addApplicationFont('C:/Windows/Fonts/segoeui.ttf');cls.app.setFont(QFont('Segoe UI',10))
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.show();self.app.processEvents()
+        self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.new_task();self.w.show();self.app.processEvents()
         self.w.current['settings']['output_root']=str(self.root/'jobs')
     def tearDown(self):self.w.close();self.app.processEvents();self.tmp.cleanup()
     def wait(self):

@@ -3,7 +3,7 @@ os.environ['QT_QPA_PLATFORM']='offscreen'
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from unittest.mock import patch,Mock
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication,QAbstractSlider
 from PySide6.QtGui import QFontDatabase,QFont
 from assistant_lab.conversations import *
 from assistant_lab.chat_flow import *
@@ -43,7 +43,7 @@ class ChatRenderTests(unittest.TestCase):
  def setUpClass(cls):
   cls.app=QApplication.instance() or QApplication([]);QFontDatabase.addApplicationFont('C:/Windows/Fonts/segoeui.ttf');cls.app.setFont(QFont('Segoe UI',10))
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.show();self.pump(.2)
+  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.new_task();self.w.show();self.pump(.2)
  def pump(self,duration):
   until=time.monotonic()+duration
   while time.monotonic()<until:self.app.processEvents();time.sleep(.005)
@@ -52,7 +52,7 @@ class ChatRenderTests(unittest.TestCase):
   task=self.w.current
   for n in range(30):message(task,'assistant',f'Message {n} '+('history line\n'*5))
   self.w.render();self.pump(.3);identity=task['messages'][0]['id'];widget=self.w.views[identity]
-  self.w.scroll_animation.stop();bar=self.w.scroll.verticalScrollBar();self.assertGreater(bar.maximum(),500);bar.setValue(120);before=bar.value()
+  bar=self.w.scroll.verticalScrollBar();self.assertGreater(bar.maximum(),500);bar.setSliderPosition(120);bar.triggerAction(QAbstractSlider.SliderMove);before=bar.value()
   message(task,'assistant','New result arrived.');self.w.render();self.pump(.3)
   self.assertIs(self.w.views[identity],widget);self.assertLess(abs(bar.value()-before),5)
  def test_actual_worker_progress_is_attached_to_its_reply(self):

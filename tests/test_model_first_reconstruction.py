@@ -21,7 +21,7 @@ class ModelFirstReconstructionTests(unittest.TestCase):
   self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.source=self.root/'sample.h5'
   with h5py.File(self.source,'w') as h:
    h['exchange/data']=np.ones((7,32,1616),np.uint16);h['exchange/data_white']=np.ones((1,32,1616),np.uint16)*2;h['exchange/data_dark']=np.zeros((1,32,1616),np.uint16);h['exchange/theta']=np.linspace(0,360,7,dtype=np.float32)
-  self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False);self.t=self.w.current
+  self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False);self.w.new_task();self.t=self.w.current
   self.w.model=Mock();self.w.model.running=True;self.w.model_ready=True
   self.w.model.understand_reconstruction.return_value=(turn(),{'model_called':True,'seconds':.1})
   self.jobs=[]

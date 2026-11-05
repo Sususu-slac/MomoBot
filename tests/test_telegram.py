@@ -87,7 +87,7 @@ class TelegramDesktopTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.show();self.pump(.1)
+  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.new_task();self.w.show();self.pump(.1)
   self.control=self.w.telegram;self.bridge=FakeBridge();self.control.bridge=self.bridge;self.control.settings.update(owner_id=123,chat_id=123)
   self.local=self.w.current;self.w.composer.setPlainText('Unsent desktop draft')
   self.remote=self.w.repo.create();self.w.tasks[self.remote['id']]=self.remote;self.control.subscribe(self.remote)

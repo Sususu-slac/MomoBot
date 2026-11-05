@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 import copy,html,json,time
-from PySide6.QtCore import Qt,QThread,Signal,QTimer,QUrl,QPropertyAnimation,QEasingCurve,QAbstractAnimation,QEvent
+from PySide6.QtCore import Qt,QThread,Signal,QTimer,QUrl,QEvent
 from PySide6.QtGui import QIcon,QDesktopServices
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
  QListWidget,QListWidgetItem,QSplitter,QScrollArea,QPlainTextEdit,QMenu,QFileDialog,
@@ -115,7 +115,7 @@ class ChatWindow(QMainWindow):
         self.default_gpu=0;self.closing=False
         self.model_profile=load_preferences().get('model_profile',DEFAULT_PROFILE)
         if self.model_profile not in MODEL_PROFILES:self.model_profile=DEFAULT_PROFILE
-        self.rendered_id=None;self.views={};self.rendered_order=[];self.scroll_positions={};self.scroll_generation=0
+        self.rendered_id=None;self.views={};self.rendered_order=[];self.scroll_positions={};self.scroll_follows={};self.follow_latest=True;self.scroll_anchor=None;self.adjusting_scroll=False;self.scroll_generation=0
         central=QWidget();outer=QHBoxLayout(central);outer.setContentsMargins(0,0,0,0);split=QSplitter();outer.addWidget(split)
         left=QWidget();left.setObjectName('sidebar');left.setMinimumWidth(220);left.setMaximumWidth(360);lv=QVBoxLayout(left);lv.setContentsMargins(15,24,15,16)
         brand=QLabel('MomoBot');brand.setObjectName('brand');lv.addWidget(brand)
@@ -131,8 +131,11 @@ class ChatWindow(QMainWindow):
         self.more_btn=QPushButton('Settings');self.more_btn.setFixedWidth(100);self.more_btn.clicked.connect(self.more);head.addWidget(self.more_btn)
         self.theme_button=QPushButton('Switch to Light');head.addWidget(self.theme_button);rv.addLayout(head)
         self.scroll=QScrollArea();self.scroll.setWidgetResizable(True);self.messages_widget=QWidget();self.messages_layout=QVBoxLayout(self.messages_widget);self.messages_layout.setContentsMargins(0,8,8,8);self.messages_layout.setSpacing(16);self.messages_layout.addStretch(1);self.scroll.setWidget(self.messages_widget);rv.addWidget(self.scroll,1)
-        self.scroll_animation=QPropertyAnimation(self.scroll.verticalScrollBar(),b'value',self);self.scroll_animation.setDuration(160);self.scroll_animation.setEasingCurve(QEasingCurve.OutCubic);self.scroll.viewport().installEventFilter(self)
-        self.scroll.verticalScrollBar().installEventFilter(self)
+        self.scroll_timer=QTimer(self);self.scroll_timer.setSingleShot(True);self.scroll_timer.timeout.connect(self.scroll_to_latest)
+        self.scroll.verticalScrollBar().sliderMoved.connect(self.scroll_value_changed)
+        self.scroll.verticalScrollBar().actionTriggered.connect(lambda action:self.scroll_value_changed(self.scroll.verticalScrollBar().sliderPosition()))
+        self.scroll.viewport().installEventFilter(self);self.scroll.verticalScrollBar().installEventFilter(self)
+        self.scroll.verticalScrollBar().rangeChanged.connect(self.scroll_range_changed)
         self.choices=QWidget();self.choices_layout=QVBoxLayout(self.choices);self.choices_layout.setContentsMargins(0,0,0,0);self.choices_layout.setSpacing(8);rv.addWidget(self.choices)
         compose=QHBoxLayout();self.attach_btn=QPushButton('+');self.attach_btn.setFixedWidth(43);self.attach_btn.setToolTip('Choose an input file or folder');self.attach_btn.clicked.connect(self.attach_menu);compose.addWidget(self.attach_btn,0,Qt.AlignBottom)
         self.composer=Composer();self.composer.setPlaceholderText('Message MomoBot…');self.composer.setFixedHeight(88);self.composer.send.connect(self.send);compose.addWidget(self.composer,1)
@@ -142,9 +145,7 @@ class ChatWindow(QMainWindow):
         split.addWidget(right);split.setSizes([260,1020]);self.setCentralWidget(central)
         self.timer=QTimer(self);self.timer.setInterval(800);self.timer.timeout.connect(self.poll);self.timer.start()
         for store in self.stores.values():store.active()
-        if not self.tasks and not self.repo.allows_empty():self.new_task()
-        elif not self.tasks:self.render()
-        else:self.refresh_list();self.select_task(next(iter(self.tasks)))
+        self.refresh_list();self.render()
         self.poll()
         if autoload:QTimer.singleShot(200,self.load_model)
         self.telegram=TelegramController(self,autoload=autoload)
@@ -170,9 +171,12 @@ class ChatWindow(QMainWindow):
             state={'draft':'Draft','running':'Running','stopping':'Stopping','completed':'Completed','failed':'Needs attention'}.get(task['state'],task['state'])
             item=QListWidgetItem(task['title']+'\n'+state);item.setData(Qt.UserRole,task['id']);item.setToolTip(task['title']);self.task_list.addItem(item)
             if task['id']==self.current_id:self.task_list.setCurrentItem(item)
+        if self.current_id is None:self.task_list.setCurrentRow(-1)
         self.task_list.blockSignals(False)
     def select_task(self,identity):
-        if self.current and self.current_id!=identity:self.current['draft']=self.composer.toPlainText();self.save(self.current);self.scroll_positions[self.current_id]=self.scroll.verticalScrollBar().value()
+        if self.current and self.current_id!=identity:self.current['draft']=self.composer.toPlainText();self.save(self.current);self.scroll_positions[self.current_id]=self.scroll.verticalScrollBar().value();self.scroll_follows[self.current_id]=self.follow_latest
+        self.follow_latest=self.scroll_follows.get(identity,True)
+        self.scroll_anchor=(identity,self.scroll_positions[identity]) if identity in self.scroll_positions and not self.follow_latest else None
         self.current_id=identity;self.composer.setPlainText(self.current.get('draft',''));self.refresh_list();self.render()
     def selected(self,item,previous):
         if item:self.select_task(item.data(Qt.UserRole))
@@ -209,7 +213,7 @@ class ChatWindow(QMainWindow):
         except OSError as error:
             QMessageBox.warning(self,'Cannot delete task',str(error));return False
         task.update(_deleted=True,cancel_requested=True,run_requested=False)
-        del self.tasks[identity];self.scroll_positions.pop(identity,None)
+        del self.tasks[identity];self.scroll_positions.pop(identity,None);self.scroll_follows.pop(identity,None)
         if self.current_id==identity:
             self.current_id=None;self.composer.clear()
             if self.tasks:self.select_task(next(iter(self.tasks)))
@@ -224,36 +228,67 @@ class ChatWindow(QMainWindow):
             item=layout.takeAt(0)
             if item.widget():item.widget().deleteLater()
             elif item.layout():self.clear_layout(item.layout())
+    def scroll_value_changed(self,value):
+        if not self.adjusting_scroll:
+            self.follow_latest=self.scroll.verticalScrollBar().maximum()-value<=2
+            self.scroll_anchor=None if self.follow_latest else (self.current_id,value)
+    def eventFilter(self,obj,event):
+        bar=self.scroll.verticalScrollBar()
+        if obj in (self.scroll.viewport(),bar):
+            if event.type()==QEvent.Wheel or obj==bar and event.type()==QEvent.MouseButtonPress:
+                self.follow_latest=False
+            if event.type() in (QEvent.Wheel,QEvent.MouseButtonRelease):QTimer.singleShot(0,lambda:self.scroll_value_changed(bar.value()))
+        return super().eventFilter(obj,event)
+    def scroll_range_changed(self,minimum,maximum):
+        # Label wrapping, activity text and viewport resizing can change the range
+        # after render() returns. Keep following the tail until the user scrolls up.
+        if self.follow_latest or self.scroll_anchor:self.scroll_timer.start(0)
+    def scroll_to_latest(self):
+        if self.closing or not self.current:return
+        restore=self.scroll_anchor
+        if not self.follow_latest and not restore:return
+        self.adjusting_scroll=True
+        try:
+            self.messages_layout.activate();bar=self.scroll.verticalScrollBar()
+            if restore and restore[0]==self.current_id:
+                bar.setValue(restore[1])
+            elif self.follow_latest:bar.setValue(bar.maximum())
+        finally:self.adjusting_scroll=False
     def render(self,scroll_bottom=True):
         task=self.current
         if not task:
-            self.scroll_animation.stop();self.clear_layout(self.messages_layout);self.messages_layout.addStretch(1)
-            self.views={};self.rendered_order=[];self.rendered_id=None;self.heading.setText('New task')
-            self.composer.clear();self.composer.setPlaceholderText('Create a new task to begin…')
+            self.scroll_timer.stop()
+            if self.rendered_id is not None or self.messages_layout.count()==1:
+                self.clear_layout(self.messages_layout);self.messages_layout.addStretch(1)
+                welcome=QLabel('What would you like to do?');welcome.setAlignment(Qt.AlignCenter);welcome.setWordWrap(True);self.messages_layout.addWidget(welcome);self.messages_layout.addStretch(1)
+            self.views={};self.rendered_order=[];self.rendered_id=None;self.heading.setText('New chat');self.heading.setToolTip('')
+            self.composer.setPlaceholderText('Message MomoBot…')
             self.clear_layout(self.choices_layout);self.choices.hide();self.update_send_enabled();return
-        self.composer.setPlaceholderText('Message MomoBot…')
-        self.update_send_enabled()
-        bar=self.scroll.verticalScrollBar();position=bar.value();follow=bar.maximum()-position<60 or self.scroll_animation.state()==QAbstractAnimation.Running
+        self.composer.setPlaceholderText('Message MomoBot…');self.update_send_enabled()
+        bar=self.scroll.verticalScrollBar();position=bar.value()
         switched=self.rendered_id!=task['id'];order=[m['id'] for m in task['messages']]
-        if switched or order[:len(self.rendered_order)]!=self.rendered_order:
-            self.scroll_animation.stop();self.clear_layout(self.messages_layout);self.messages_layout.addStretch(1);self.views={};self.rendered_order=[];self.rendered_id=task['id']
-        self.heading.setText(task['title']);self.heading.setToolTip(task['title'])
-        for entry in task['messages']:
-            if entry['id'] not in self.views:
-                view=MessageView(entry);self.views[entry['id']]=view;self.messages_layout.addWidget(view)
-            else:self.views[entry['id']].update_entry(entry)
-        self.rendered_order=order;self.render_choices();self.update_progress();self.scroll_generation+=1;generation=self.scroll_generation
+        self.adjusting_scroll=True
+        try:
+            if switched or order[:len(self.rendered_order)]!=self.rendered_order:
+                self.scroll_timer.stop();self.clear_layout(self.messages_layout);self.messages_layout.addStretch(1);self.views={};self.rendered_order=[];self.rendered_id=task['id']
+            self.heading.setText(task['title']);self.heading.setToolTip(task['title'])
+            for entry in task['messages']:
+                if entry['id'] not in self.views:
+                    view=MessageView(entry);self.views[entry['id']]=view;self.messages_layout.addWidget(view)
+                else:self.views[entry['id']].update_entry(entry)
+            self.rendered_order=order;self.render_choices();self.update_progress();self.scroll_generation+=1;generation=self.scroll_generation
+        finally:self.adjusting_scroll=False
         def settle():
             if self.current_id!=task['id'] or generation!=self.scroll_generation:return
-            self.messages_layout.activate()
-            if switched:bar.setValue(self.scroll_positions.get(task['id'],bar.maximum()))
-            elif follow and scroll_bottom:
-                self.scroll_animation.stop();self.scroll_animation.setStartValue(bar.value());self.scroll_animation.setEndValue(bar.maximum());self.scroll_animation.start()
-            else:bar.setValue(position)
+            self.adjusting_scroll=True
+            try:
+                self.messages_layout.activate()
+                if self.follow_latest and scroll_bottom:bar.setValue(bar.maximum())
+                elif self.scroll_anchor and self.scroll_anchor[0]==task['id']:bar.setValue(self.scroll_anchor[1])
+                elif switched:bar.setValue(self.scroll_positions.get(task['id'],bar.maximum()))
+                else:bar.setValue(position)
+            finally:self.adjusting_scroll=False
         QTimer.singleShot(0,settle)
-    def eventFilter(self,obj,event):
-        if obj in (self.scroll.viewport(),self.scroll.verticalScrollBar()) and event.type() in (QEvent.Wheel,QEvent.MouseButtonPress,QEvent.KeyPress):self.scroll_animation.stop()
-        return super().eventFilter(obj,event)
     def render_choices(self):
         self.clear_layout(self.choices_layout);self.choices.setVisible(False)
     def guide(self,task):
@@ -325,22 +360,24 @@ class ChatWindow(QMainWindow):
         elif token.startswith('epochs:'):apply_response(task,Plan('set_parameters',{'epochs':int(token.split(':',1)[1])},''))
         self.guide(task)
     def attach_menu(self):
-        if self.busy or not self.current:return
+        if self.busy:return
         menu=QMenu(self)
         for label,field,json_file in [('HDF5 data','input_hdf5',False),('Image folder','image_folder',False),('Dataset folder','dataset',False),('COCO JSON file','dataset',True),('SAM3 checkpoint','checkpoint',False)]:
             a=menu.addAction(label);a.triggered.connect(lambda checked=False,f=field,j=json_file:self.browse(f,j))
         menu.exec(self.attach_btn.mapToGlobal(self.attach_btn.rect().topLeft()))
     def browse(self,field,json_file=False):
         task=self.current
-        if task['state'] in ('running','stopping'):self.fail(task['id'],'Wait for the active task before changing its files.');return
-        expected='image_folder' if task['kind']=='segment' else 'dataset' if task['kind'] in ('train','prepare_dataset') else 'input_hdf5'
-        if task['kind'] and field not in (expected,'checkpoint','resume_checkpoint','output_root'):
+        if task and task['state'] in ('running','stopping'):self.fail(task['id'],'Wait for the active task before changing its files.');return
+        settings=task['settings'] if task else DEFAULTS
+        expected='image_folder' if task and task['kind']=='segment' else 'dataset' if task and task['kind'] in ('train','prepare_dataset') else 'input_hdf5'
+        if task and task['kind'] and field not in (expected,'checkpoint','resume_checkpoint','output_root'):
             self.fail(task['id'],'This input belongs to another task type. Create a new task for it.');return
-        if field in ('image_folder','output_root') or field=='dataset' and not json_file:value=QFileDialog.getExistingDirectory(self,'Choose folder',task['settings'].get(field,''))
+        if field in ('image_folder','output_root') or field=='dataset' and not json_file:value=QFileDialog.getExistingDirectory(self,'Choose folder',settings.get(field,''))
         else:
             filter_='COCO JSON (*.json)' if json_file else 'HDF5 (*.h5 *.hdf5 *.hdf)' if field=='input_hdf5' else 'Checkpoint (*.pt *.pth)'
-            value=QFileDialog.getOpenFileName(self,'Choose file',task['settings'].get(field,''),filter_)[0]
+            value=QFileDialog.getOpenFileName(self,'Choose file',settings.get(field,''),filter_)[0]
         if not value:return
+        if task is None:self.new_task();task=self.current
         if not task['kind'] and field in ('input_hdf5','image_folder','dataset'):choose_kind(task,{'input_hdf5':'reconstruct','image_folder':'segment','dataset':'train'}[field])
         if not task['kind']:self.fail(task['id'],'Choose a task first.');return
         set_source(task,field,value);self.add(task,'user',('Output folder: ' if field=='output_root' else 'Selected: ')+value)
@@ -390,10 +427,11 @@ class ChatWindow(QMainWindow):
         else:self.add(task,'assistant',text)
         task['awaiting_confirmation']=current=='ready';self.save(task);self.refresh_list();self.render_if_current(task)
     def send(self):
-        text=self.composer.toPlainText().strip();task=self.current
-        if not text or not task:return
+        text=self.composer.toPlainText().strip()
+        if not text:return
         if self.busy and quick_reply(text) is None and not control_input(text):return
-        self.composer.clear();task['draft']=''
+        if self.current is None:self.new_task()
+        task=self.current;self.composer.clear();task['draft']=''
         self.submit_text(task,text)
     def _is_reconstruction_message(self,task,text):
         from .reconstruction_sop import KINDS,input_paths,clean_text
@@ -457,6 +495,7 @@ class ChatWindow(QMainWindow):
         if self.closing or not text.strip() or self.busy and instant is None and not busy_control:return
         if chinese(text):task['language']='zh'
         elif len(text.split())>=3 and not (':' in text and '\\' in text):task['language']='en'
+        if not remote and task['id']==self.current_id:self.scroll_anchor=None;self.follow_latest=True;self.scroll_timer.start(0)
         self.add(task,'user',text)
         if instant is not None:
             self.add(task,'assistant',instant,sticker=greeting_sticker(text));self.render();return
@@ -553,8 +592,8 @@ class ChatWindow(QMainWindow):
         self.background(lambda:self.model.converse(text,captured),done,identity)
 
     def update_send_enabled(self):
-        self.send_btn.setEnabled(self.current is not None and (not self.busy or quick_reply(self.composer.toPlainText()) is not None or control_input(self.composer.toPlainText())))
-        self.attach_btn.setEnabled(self.current is not None and not self.busy)
+        self.send_btn.setEnabled(not self.busy or quick_reply(self.composer.toPlainText()) is not None or control_input(self.composer.toPlainText()))
+        self.attach_btn.setEnabled(not self.busy)
         self.delete_btn.setEnabled(self.current is not None)
 
     def start_task(self,task,reply=None):
@@ -680,4 +719,4 @@ class ChatWindow(QMainWindow):
     def closeEvent(self,event):
         if self.busy:self.statusBar().showMessage('Please wait for the current model or file request to finish.');event.ignore();return
         if self.current:self.current['draft']=self.composer.toPlainText();self.save(self.current)
-        self.closing=True;self.scroll_animation.stop();self.timer.stop();self.telegram.timer.stop();self.telegram.stop();self.model.stop();event.accept()
+        self.closing=True;self.scroll_timer.stop();self.timer.stop();self.telegram.timer.stop();self.telegram.stop();self.model.stop();event.accept()

@@ -1,6 +1,6 @@
-# MomoBot 0.9.0
+# MomoBot 0.9.1
 
-A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists tasks; the right side contains the conversation and message composer. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
+A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists saved tasks; the right side contains the conversation and message composer. Each launch opens a fresh chat. Sending the first message creates a task automatically; the New task button remains available. Select a saved task to reopen its conversation and draft. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
 
 ## Windows setup
 
@@ -51,3 +51,9 @@ A new reconstruction request first explains Traditional and Smart (Text/Instance
 Gemma interprets each reconstruction message before the application checks paths, units, dimensions and workflow state. For example, `please 807.5 ± 50 px, step 1` updates the candidate range to **757.5–857.5**, step **1**, without starting computation. Relative changes such as `make it twice as wide` also use the current settings. Explicit generation/search commands and reviewed-plan confirmation remain distinct from configuration.
 
 The UI shows genuine model activity while waiting and removes the activity when complete. Actual execution parameters are echoed from validated settings. Failed interpretations invalidate stale confirmations; cancellation discards late model updates. Model text cannot execute arbitrary commands or establish scientific results. Existing reconstruction/scoring algorithms and the GPU assignment (Gemma GPU 1, scientific defaults GPU 0) are retained.
+
+## 0.9.1 — fresh chat and reliable scrolling
+
+Startup lists saved tasks without opening a previous conversation or creating an unused empty task. Type directly and send to create a task, or use New task explicitly. Attachments also work from the fresh page; cancelling a picker leaves it empty. History, drafts and running workers remain available independently.
+
+Chat follows new messages, growing replies and delayed text wrapping. Scrolling up pauses following so history stays readable; sending your next message resumes following the latest messages. Switching tasks restores the saved reading position. Model-first reconstruction behavior is unchanged.

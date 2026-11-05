@@ -1,4 +1,6 @@
-# Reconstruction chat workflow — MomoBot 0.9.0
+# Reconstruction chat workflow — MomoBot 0.9.1
+
+Each launch starts on a fresh chat page. Type and send to create a task automatically, use New task explicitly, or select a saved task from the sidebar. History and drafts remain saved.
 
 Paste an HDF5 file path or a folder containing HDF5 files. MomoBot reads projection count, detector dimensions, dtype, file size, theta range and flat/dark shapes before planning computation. If a folder contains several files, choose one by its displayed number. Unquoted Windows HDF5 paths containing spaces are supported.
 

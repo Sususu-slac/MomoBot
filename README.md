@@ -1,4 +1,4 @@
-# MomoBot 0.9.1
+# MomoBot 0.10.0
 
 A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists saved tasks; the right side contains the conversation and message composer. Each launch opens a fresh chat. Sending the first message creates a task automatically; the New task button remains available. Select a saved task to reopen its conversation and draft. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
 
@@ -57,3 +57,13 @@ The UI shows genuine model activity while waiting and removes the activity when 
 Startup lists saved tasks without opening a previous conversation or creating an unused empty task. Type directly and send to create a task, or use New task explicitly. Attachments also work from the fresh page; cancelling a picker leaves it empty. History, drafts and running workers remain available independently.
 
 Chat follows new messages, growing replies and delayed text wrapping. Scrolling up pauses following so history stays readable; sending your next message resumes following the latest messages. Switching tasks restores the saved reading position. Model-first reconstruction behavior is unchanged.
+
+## 0.10.0 — linked data and result viewers
+
+HDF5 information includes **View data / Set parameters**. The nonmodal input window previews projections, flat and dark frames; zoom/pan and display limits affect only the preview. Clicking a projection selects the zero-based search/trial row. Edit geometry/tilt, method, center/trial anchor, row range, binning, GPU, text feature, stripe removal and dezinger, then choose Apply to Momo. Changes use the same parameter validation and return to the chat workflow for review; they never start computation by themselves.
+
+Completed trials include **Review trial images / Select parameter**. Compare exact saved TIFFs in numeric candidate order, then Use this center (or Use this angle). Momo records the selected candidate and shows the full reconstruction review. It still requires confirmation. Locked display limits support comparison across candidates.
+
+A running or completed reconstruction includes **Browse reconstruction**. Browse saved 2D TIFF/PNG slices, including slices that arrive while the worker runs. Natural filename order and selection are preserved as new slices arrive. Read-only preview uses background reads, debounced navigation and a four-image cache, with display images limited to 1536 pixels on the longest side. Original HDF5/TIFF values and SAM3 inputs are unchanged. Packed 3D TIFFs are outside this first viewer's scope.
+
+Viewers stay bound to the originating task, input fingerprint and job. Changed/deleted inputs and obsolete trial selections cannot overwrite a different task. Older saved conversations receive viewer links when opened, where their job metadata is available. Viewers are desktop windows; Telegram does not host these windows in a phone browser. Existing environments/dependencies are reused, with no model or GPU allocation change.

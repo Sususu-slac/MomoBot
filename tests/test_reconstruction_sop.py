@@ -60,7 +60,7 @@ class SOPTests(unittest.TestCase):
    p=self.r/f'recon_slice0016_center{c:.2f}.tiff';Image.fromarray(np.arange(256,dtype=np.float32).reshape(16,16)).save(p);files.append(str(p))
   items=catalogue(files)
   with patch.object(self.w.sop,'open_folder',return_value=True) as opened:self.complete(dict(candidates=3,files=files,folder=str(self.r),candidate_catalogue=items))
-  opened.assert_called_once();self.assertEqual(self.t['sop']['phase'],'choose');self.send('第3张');self.assertEqual(self.t['settings']['center'],32);self.assertEqual(self.t['sop']['phase'],'confirm');self.assertEqual(len(self.calls),1)
+  opened.assert_not_called();self.assertEqual(self.t['messages'][-1]['tools'][0]['kind'],'trials');self.assertEqual(self.t['sop']['phase'],'choose');self.send('第3张');self.assertEqual(self.t['settings']['center'],32);self.assertEqual(self.t['sop']['phase'],'confirm');self.assertEqual(len(self.calls),1)
   self.send('确认重建');self.assertEqual(len(self.calls),2);self.assertEqual(self.calls[-1][0]['action'],'reconstruct')
  def test_new_input_clears_center_geometry_example_and_confirmation(self):
   self.prepare();self.t['settings']['instance_reference']={'image':'old'};self.send(str(self.other))

@@ -29,7 +29,7 @@ def main():
         from assistant_lab.config import MODEL_PROFILES,DEFAULT_PROFILE
         target=Path(sys.argv[sys.argv.index('--self-test')+1]);target.parent.mkdir(parents=True,exist_ok=True)
         target.write_text(json.dumps(dict(version=VERSION,profiles=list(MODEL_PROFILES),default_profile=DEFAULT_PROFILE,
-            fresh_chat=window.current is None,direct_chat_enabled=window.send_btn.isEnabled(),sop_available=hasattr(window,'sop'),model_first_reconstruction=window.reconstruction_model_first,delete_button_present=window.delete_btn.text()=='Delete task',model_started=window.model.running),indent=2),encoding='utf-8')
+            viewer_links_available=hasattr(window,'open_viewer'),fresh_chat=window.current is None,direct_chat_enabled=window.send_btn.isEnabled(),sop_available=hasattr(window,'sop'),model_first_reconstruction=window.reconstruction_model_first,delete_button_present=window.delete_btn.text()=='Delete task',model_started=window.model.running),indent=2),encoding='utf-8')
         window.close();app.processEvents();return 0
     if '--telegram-setup' in sys.argv:QTimer.singleShot(900,window.telegram.show)
     def activate():

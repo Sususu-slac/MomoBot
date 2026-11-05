@@ -69,6 +69,7 @@ class Composer(QPlainTextEdit):
         else:super().keyPressEvent(e)
 
 class MessageView(QWidget):
+    tool_activated=Signal(str)
     def __init__(self,entry,parent=None):
         super().__init__(parent);layout=QHBoxLayout(self);layout.setContentsMargins(0,0,0,0);user=entry['role']=='user'
         frame=QFrame();frame.setObjectName('userBubble' if user else 'assistantBubble');frame.setMaximumWidth(820 if not user else 650)
@@ -78,12 +79,15 @@ class MessageView(QWidget):
         self.sticker=QLabel();self.sticker.setAccessibleName('MomoBot kitten greeting');body.addWidget(self.sticker,0,Qt.AlignLeft)
         self.process=QLabel();self.process.setWordWrap(True);self.process.setObjectName('muted');self.process.setTextFormat(Qt.PlainText)
         body.addWidget(self.process)
+        self.tool_links=QLabel();self.tool_links.setTextFormat(Qt.RichText);self.tool_links.setWordWrap(True);self.tool_links.setTextInteractionFlags(Qt.TextBrowserInteraction);self.tool_links.setOpenExternalLinks(False);self.tool_links.linkActivated.connect(self.tool_activated.emit);body.addWidget(self.tool_links)
         if user:layout.addStretch(1)
         layout.addWidget(frame,1)
         self.signature=None;self.update_entry(entry)
     def update_entry(self,entry):
         signature=json.dumps(entry,ensure_ascii=False,sort_keys=True)
         if signature==self.signature:return
+        tools=entry.get('tools',[]) if entry['role']=='assistant' else []
+        self.tool_links.setText('<br>'.join('<a style="color:#3478ca;text-decoration:underline" href="'+html.escape(t['id'],quote=True)+'">'+html.escape(t['label'])+'</a>' for t in tools));self.tool_links.setVisible(bool(tools))
         self.signature=signature;self.text.setText(entry['text']);self.text.setVisible(bool(entry['text']))
         pixmap=sticker_pixmap(entry.get('sticker')) if entry['role']=='assistant' else None
         if pixmap is not None and not pixmap.isNull():self.sticker.setPixmap(pixmap);self.sticker.show()
@@ -112,7 +116,7 @@ class ChatWindow(QMainWindow):
         self.sop=ReconstructionSOP(self)
         for task in self.tasks.values():self.sop.restore(task)
         self.current_id=None;self.model=ChatModel();self.busy=False;self.threads=[];self.model_ready=False;self.progress_key=None
-        self.default_gpu=0;self.closing=False
+        self.default_gpu=0;self.closing=False;self.viewer_windows={}
         self.model_profile=load_preferences().get('model_profile',DEFAULT_PROFILE)
         if self.model_profile not in MODEL_PROFILES:self.model_profile=DEFAULT_PROFILE
         self.rendered_id=None;self.views={};self.rendered_order=[];self.scroll_positions={};self.scroll_follows={};self.follow_latest=True;self.scroll_anchor=None;self.adjusting_scroll=False;self.scroll_generation=0
@@ -177,7 +181,11 @@ class ChatWindow(QMainWindow):
         if self.current and self.current_id!=identity:self.current['draft']=self.composer.toPlainText();self.save(self.current);self.scroll_positions[self.current_id]=self.scroll.verticalScrollBar().value();self.scroll_follows[self.current_id]=self.follow_latest
         self.follow_latest=self.scroll_follows.get(identity,True)
         self.scroll_anchor=(identity,self.scroll_positions[identity]) if identity in self.scroll_positions and not self.follow_latest else None
-        self.current_id=identity;self.composer.setPlainText(self.current.get('draft',''));self.refresh_list();self.render()
+        self.current_id=identity;self.composer.setPlainText(self.current.get('draft',''))
+        if self.current.get('metadata') or self.current.get('jobs'):
+            from .viewer_links import ensure_tools
+            ensure_tools(self,self.current)
+        self.refresh_list();self.render()
     def selected(self,item,previous):
         if item:self.select_task(item.data(Qt.UserRole))
     def rename_task(self,item):
@@ -274,7 +282,7 @@ class ChatWindow(QMainWindow):
             self.heading.setText(task['title']);self.heading.setToolTip(task['title'])
             for entry in task['messages']:
                 if entry['id'] not in self.views:
-                    view=MessageView(entry);self.views[entry['id']]=view;self.messages_layout.addWidget(view)
+                    view=MessageView(entry);view.tool_activated.connect(lambda tool_id,t=task['id'],e=entry['id']:self.open_viewer(t,e,tool_id));self.views[entry['id']]=view;self.messages_layout.addWidget(view)
                 else:self.views[entry['id']].update_entry(entry)
             self.rendered_order=order;self.render_choices();self.update_progress();self.scroll_generation+=1;generation=self.scroll_generation
         finally:self.adjusting_scroll=False
@@ -289,6 +297,9 @@ class ChatWindow(QMainWindow):
                 else:bar.setValue(position)
             finally:self.adjusting_scroll=False
         QTimer.singleShot(0,settle)
+    def open_viewer(self,identity,entry_id,tool_id):
+        from .viewer_links import open_tool
+        return open_tool(self,identity,entry_id,tool_id)
     def render_choices(self):
         self.clear_layout(self.choices_layout);self.choices.setVisible(False)
     def guide(self,task):
@@ -614,6 +625,9 @@ class ChatWindow(QMainWindow):
             if find_entry(task,reply):find_entry(task,reply)['text']=summary;activity(task,reply,say(task,'Scientific worker submitted','已提交实际计算任务'))
             else:self.add(task,'assistant',summary)
             self.save(task);self.refresh_list();self.render_if_current(task)
+            if job['action'] in ('reconstruct','analyze'):
+                from .viewer_links import attach_tool
+                attach_tool(self,task,'results',Path(job['job_dir'])/'results/reconstruction',task['jobs'][-1],find_entry(task,reply))
         except Exception as e:self.fail(task['id'],str(e))
     def latest(self,task):return task['jobs'][-1] if task['jobs'] else None
     def show_status(self,task):

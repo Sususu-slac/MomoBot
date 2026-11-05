@@ -179,6 +179,8 @@ class ReconstructionSOP:
                      f"Theta: {meta.get('theta_min','?')}–{meta.get('theta_max','?')} {meta.get('theta_unit','')}\n"
                      f"Flat/dark frames: {meta.get('white_shape','?')} / {meta.get('dark_shape','?')}")
             self.tell(t,summary)
+            from .viewer_links import attach_tool
+            attach_tool(self.w,t,'input',path)
             if understood is not None:
                 from .reconstruction_turns import validate_current
                 try:validate_current(t)
@@ -501,9 +503,11 @@ class ReconstructionSOP:
             if actual==s['method'] and meta.get('elapsed_seconds'):
                 sample={k:s[k] for k in ('input_hdf5','geometry','lamino_angle','method','binning','gpu')};sample.update(key=timing_key(t),seconds=meta['elapsed_seconds'],slices=len(items));p.setdefault('timings',[]).append(sample);self.remember_timing(sample)
             p['candidates']=items;p['candidate_folder']=result.get('preview_folder') or result['folder'];self.phase(t,'choose_angle' if stage=='angle_trial' else 'choose')
-            opened=self.open_folder(t,p['candidate_folder']);unit='°' if stage=='angle_trial' else 'px';quantity='angle' if stage=='angle_trial' else 'center'
+            unit='°' if stage=='angle_trial' else 'px';quantity='angle' if stage=='angle_trial' else 'center'
             mapping='\n'.join(f"{i['index']}: {i['value']:g} {unit}" for i in items[:30])
-            self.tell(t,f"Saved {len(items)} candidates. {'Opened' if opened else 'Folder'}: {p['candidate_folder']}\n{mapping}\nWhich {quantity} looks best? Give a {quantity} value, “candidate 3”, or a filename. The numbered PNGs and CSV use this exact order.",f"已保存 {len(items)} 张候选图。{'已打开文件夹' if opened else '文件夹'}：{p['candidate_folder']}\n{mapping}\n你选哪张？可以回复参数数值、“第3张”或文件名。编号 PNG 和 CSV 使用同一顺序。")
+            self.tell(t,f"Saved {len(items)} candidates. Folder: {p['candidate_folder']}\n{mapping}\nWhich {quantity} looks best? Give a {quantity} value, “candidate 3”, or a filename. The numbered PNGs and CSV use this exact order.",f"已保存 {len(items)} 张候选图。文件夹：{p['candidate_folder']}\n{mapping}\n你选哪张？可以回复参数数值、“第3张”或文件名。编号 PNG 和 CSV 使用同一顺序。")
+            from .viewer_links import attach_tool
+            attach_tool(self.w,t,'trials',p['candidate_folder'],job)
         elif stage=='search':
             center=result.get('recommended_center')
             if center is None:self.phase(t,'interrupted');self.tell(t,'No center was saved by the search.','自动搜索未保存有效中心。');return True
@@ -519,6 +523,9 @@ class ReconstructionSOP:
             else:
                 if stage=='auto_full':p['center_valid']=True;s['center']=float(result.get('center_search',{}).get('recommended_center',s['center']))
                 self.phase(t,'complete');t['state']='completed';self.tell(t,'Full reconstruction completed. Results: '+result.get('folder',status.get('output','')),'全量重建完成。结果目录：'+result.get('folder',status.get('output','')))
+        if stage in ('full','auto_full','pilot'):
+            from .viewer_links import attach_tool
+            attach_tool(self.w,t,'results',Path(job['job_dir'])/'results/reconstruction',job)
         self.w.save(t);return True
     def remember_timing(self,sample):
         from .jobs import atomic_json

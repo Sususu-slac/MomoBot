@@ -1,4 +1,4 @@
-# Reconstruction chat workflow — MomoBot 0.9.1
+# Reconstruction chat workflow — MomoBot 0.10.0
 
 Each launch starts on a fresh chat page. Type and send to create a task automatically, use New task explicitly, or select a saved task from the sidebar. History and drafts remain saved.
 
@@ -14,11 +14,17 @@ A standalone greeting remains immediate. During a pending model/metadata call, c
 
 For example, `please 807.5 ± 50 px, step 1` means center 807.5, half-width 50, range 757.5–857.5, step 1. It only changes settings. `Generate candidates` explicitly starts the configured trial stage. If a parameter remains ambiguous, MomoBot asks instead of claiming an old setting was changed.
 
+## Linked desktop viewers
+
+The HDF5 metadata message includes View data / Set parameters. Open it to browse projections/flat/dark and set parameters; click a projection to pick the search/trial row. Apply to Momo validates the edits and returns to the chat workflow for review. Source pixels are read-only.
+
+Trial completion includes Review trial images / Select parameter. Choose the exact saved candidate and use its center or angle; Momo then shows the full-run confirmation. Browse reconstruction opens the saved slice stack, including available slices while a worker is still running. The viewers are nonmodal and remain bound to their originating task. Opening older conversations adds links where saved job metadata is available. These are desktop tools, not phone-hosted web pages.
+
 ## Traditional reconstruction
 
 Ask for manual/traditional reconstruction. MomoBot offers a trial center range, step and middle detector row. The range is a starting proposal, not a measured center. You can change it before saying generate candidates. Angle trials instead require a fixed center and a tilt range. Automatic angle scoring is not implemented. ASTRA full reconstruction can use FourierRec trial images while retaining the selected full method.
 
-After the sweep finishes, a folder opens with numbered PNG previews and candidate_index.csv. Numbering is one-based and follows numeric parameter order. Choose by image number, ordinal, center/angle value or actual saved filename. Ambiguous numbers and multiple choices cause a clarification. MomoBot never guesses which image looks sharpest.
+After the sweep finishes, a viewer link appears. The result folder also contains numbered PNG previews and candidate_index.csv. Numbering is one-based and follows numeric parameter order. Choose by image number, ordinal, center/angle value or actual saved filename. Ambiguous numbers and multiple choices cause a clarification. MomoBot never guesses which image looks sharpest.
 
 A selected center or angle produces a full reconstruction review, not immediate execution. The review contains source, geometry/tilt, method, center, GPU, row range, binning, expected TIFF size, preprocessing, output parent and estimated time. Output goes into a new task directory. Confirm once to execute. A complete explicit command skips questions for values already supplied and still requires that one confirmation. Edits invalidate the prior confirmation.
 

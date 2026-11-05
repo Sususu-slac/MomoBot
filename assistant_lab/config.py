@@ -14,7 +14,7 @@ MODEL_DIR=Path(os.environ.get('BL62_MODEL_DIR','D:/Chcekpoints/LLM'))
 GEMMA_MODEL=MODEL_DIR/'gemma-4-26B_q4_0-it.gguf'
 MODEL=GEMMA_MODEL
 DEFAULT_PROFILE='gemma4'
-VERSION='0.9.1'
+VERSION='0.10.0'
 RUNTIME_ROOT=Path(os.environ.get('MOMOBOT_RUNTIME_ROOT',str(ROOT/'runtime/llama-b11988')))
 MODEL_PROFILES={
     'gemma4':dict(label='Gemma 4 26B-A4B · Google · GPU 1',mode='GPU 1',model_path=GEMMA_MODEL,context=8192,

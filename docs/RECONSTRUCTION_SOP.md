@@ -1,4 +1,4 @@
-# Reconstruction chat workflow — MomoBot 0.10.1
+# Reconstruction chat workflow — MomoBot 0.10.2
 
 Each launch starts on a fresh chat page. Type and send to create a task automatically, use New task explicitly, or select a saved task from the sidebar. History and drafts remain saved.
 

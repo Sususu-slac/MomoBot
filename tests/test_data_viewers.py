@@ -1,5 +1,5 @@
 """Task-bound GUI links, read-only previews and explicit parameter handoff."""
-import os,copy,tempfile,time,hashlib,unittest
+import os,copy,tempfile,time,hashlib,unittest,threading
 from pathlib import Path
 from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
@@ -46,10 +46,35 @@ class ViewerTests(unittest.TestCase):
  def test_metadata_link_opens_a_nonmodal_viewer_and_reads_uint16(self):
   entry,tool=self.link();self.w.views[entry['id']].tool_links.linkActivated.emit(tool['id']);dialog=next(iter(self.w.viewer_windows.values()));self.assertFalse(dialog.isModal());self.wait(lambda:dialog.array is not None);self.assertEqual(dialog.array[0,0],self.data[2,0,0]);self.assertIn('uint16',dialog.image_info.text());self.assertEqual(hashlib.sha256(self.path.read_bytes()).hexdigest(),self.before)
  def test_picking_a_projection_row_updates_the_pending_search_and_trial_rows(self):
-  entry,tool=self.link();dialog=self.open(entry,tool);dialog.canvas.row_picked.emit(.25);self.assertEqual(dialog.fields['search_row'].value(),4)
+  entry,tool=self.link();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);dialog.canvas.row_picked.emit(.25);self.assertEqual(dialog.fields['search_row'].value(),4)
   dialog.geometry.setCurrentIndex(1);dialog.mode.setCurrentIndex(1);dialog.apply_button.click();self.pump();self.assertEqual(self.t['settings']['search_row'],4);self.assertEqual(self.t['settings']['trial_row'],4)
  def test_applying_unchanged_parameters_keeps_a_pending_trial_selection(self):
   self.trial();entry,tool=self.link();dialog=self.open(entry,tool);before=copy.deepcopy(self.t['settings']);dialog.apply_button.click();self.assertEqual(self.t['settings'],before);self.assertEqual(self.t['sop']['phase'],'choose');self.assertIn('No parameter changes',dialog.feedback.text())
+ def test_slow_projection_load_preserves_pixels_and_discards_obsolete_reads(self):
+  entry,tool=self.link();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);item=dialog.canvas.item;old_key=dialog.loaded_key;old_array=dialog.array;old_pick=dialog.fields['search_row'].value();entered=threading.Event();release=threading.Event();seen=[];original_ready=dialog.preview_ready
+  def read(path,source,index,stamp):
+   if index==4:entered.set();release.wait(4)
+   return read_hdf5(path,source,index,stamp)
+  def ready():seen.append(dialog.loaded_key[2]);original_ready()
+  try:
+   with patch('assistant_lab.data_viewers.read_hdf5',side_effect=read),patch.object(dialog,'preview_ready',side_effect=ready):
+    dialog.slider.setValue(5);self.wait(entered.is_set);self.assertIs(dialog.canvas.item,item);self.assertIs(dialog.array,old_array);self.assertEqual(dialog.loaded_key,old_key);self.assertIn('previous',dialog.status.text());self.assertIn('Projection 3',dialog.image_info.text());dialog.pick_row(.25);self.assertEqual(dialog.fields['search_row'].value(),old_pick)
+    dialog.slider.setValue(4);release.set();self.wait(lambda:dialog.loaded_key==dialog.request_key);self.assertIs(dialog.canvas.item,item);self.assertEqual(dialog.array[0,0],self.data[3,0,0]);self.assertEqual(seen,[3]);self.assertIn('Projection 4',dialog.image_info.text())
+  finally:release.set()
+ def test_dragging_projection_slider_never_clears_the_last_image(self):
+  entry,tool=self.link();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);item=dialog.canvas.item;dialog.canvas.scale(2,2);zoom=dialog.canvas.transform().m11()
+  for value in (5,1,2,4):
+   dialog.slider.setValue(value);self.pump(.01);self.assertIs(dialog.canvas.item,item);self.assertFalse(item.pixmap().isNull())
+  self.wait(lambda:dialog.loaded_key==dialog.request_key);self.assertEqual(dialog.array[0,0],self.data[3,0,0]);self.assertAlmostEqual(dialog.canvas.transform().m11(),zoom,places=4)
+ def test_failed_next_projection_keeps_previous_image_explicitly_identified(self):
+  entry,tool=self.link();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);item=dialog.canvas.item;old_key=dialog.loaded_key
+  with patch('assistant_lab.data_viewers.read_hdf5',side_effect=OSError('test read failed')):
+   dialog.frame.setValue(5);self.wait(lambda:'test read failed' in dialog.status.text())
+  self.assertIs(dialog.canvas.item,item);self.assertEqual(dialog.loaded_key,old_key);self.assertNotEqual(dialog.loaded_key,dialog.request_key);self.assertIn('previous',dialog.status.text());self.assertIn('Projection 3',dialog.image_info.text())
+ def test_trial_cannot_accept_previous_image_while_new_candidate_is_loading(self):
+  items,entry,tool=self.trial();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);item=dialog.canvas.item;dialog.frame.setValue(3);self.assertIs(dialog.canvas.item,item);self.assertFalse(dialog.use_button.isEnabled());dialog.select();self.assertEqual(self.t['settings']['center'],16);self.assertEqual(self.t['sop']['phase'],'choose');self.wait(lambda:dialog.loaded_key==dialog.request_key);self.assertTrue(dialog.use_button.isEnabled())
+ def test_different_image_dimensions_are_fitted_after_replacing_pixels(self):
+  entry,tool=self.link();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);dialog.canvas.scale(4,4);dialog.canvas.centerOn(5000,5000);dialog.canvas.show_gray(np.ones((4,8),np.uint8));visible=dialog.canvas.mapToScene(dialog.canvas.viewport().rect()).boundingRect();self.assertTrue(visible.contains(dialog.canvas.item.boundingRect().center()))
  def test_duplicate_link_reuses_the_same_window(self):
   entry,tool=self.link();first=self.open(entry,tool);self.assertIs(self.open(entry,tool),first);self.assertEqual(len(self.w.viewer_windows),1)
  def test_unknown_link_and_user_text_are_not_executable_links(self):

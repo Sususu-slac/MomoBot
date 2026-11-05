@@ -78,12 +78,14 @@ class Canvas(QGraphicsView):
     def show_gray(self,gray):
         image=QImage(gray.data,gray.shape[1],gray.shape[0],gray.strides[0],QImage.Format_Grayscale8).copy();pixmap=QPixmap.fromImage(image)
         first=self.item is None
+        same_size=not first and self.item.pixmap().size()==pixmap.size()
         if first:self.item=self.scene().addPixmap(pixmap)
         else:self.item.setPixmap(pixmap)
         self.scene().setSceneRect(self.item.boundingRect())
         if first:
             if self.saved_view and self.saved_view[0]==pixmap.size():self.setTransform(self.saved_view[1]);self.centerOn(self.saved_view[2])
             else:self.fit_image()
+        elif not same_size:self.fit_image()
     def fit_image(self):
         if self.item:self.fitInView(self.item,Qt.KeepAspectRatio)
     def mousePressEvent(self,event):self.press_position=event.position();super().mousePressEvent(event)
@@ -119,7 +121,10 @@ class ImageBrowser(QDialog):
     def show_feedback(self,text,error=False):
         self.feedback.setText(text);self.feedback.setStyleSheet('color:#d54d4d' if error else '');self.feedback.setVisible(bool(text))
     def request(self,key,call):
-        self.request_key=key;self.pending=(key,call);self.array=None;self.loaded_key=None;self.canvas.clear_image();self.status.setText('Loading preview…');self.debounce.start()
+        self.request_key=key;self.pending=(key,call)
+        # Swap pixels only after the latest read succeeds. Keep the displayed
+        # frame and its provenance while dragging or waiting for disk I/O.
+        self.status.setText('Loading preview… Displaying the previous image.' if self.array is not None else 'Loading preview…');self.debounce.start()
     def start_read(self):
         if self.closed or self.loading or not self.pending:return
         key,call=self.pending;self.pending=None
@@ -130,7 +135,7 @@ class ImageBrowser(QDialog):
         if self.closed:return
         key,array,limits,shape,dtype,error=result
         if key==self.request_key:
-            if error:self.status.setText('Preview unavailable: '+error)
+            if error:self.status.setText('Preview unavailable: '+error+(' — displaying the previous image.' if self.array is not None else ''))
             else:
                 self.cache[key]=result
                 while len(self.cache)>4:self.cache.popitem(last=False)
@@ -181,7 +186,7 @@ class InputBrowser(ImageBrowser):
     def update_rows(self):
         self.canvas.row_marks=[(self.fields[k].value()/self.meta['rows'],color) for k,color in (('start_row','#4bbf86'),('end_row','#4bbf86'),('search_row','#ffbe46'))];self.canvas.viewport().update()
     def pick_row(self,fraction):
-        if self.source.currentText()=='Projection':self.fields['search_row'].setValue(min(self.meta['rows']-1,int(fraction*self.meta['rows'])))
+        if self.source.currentText()=='Projection' and self.loaded_key==self.request_key:self.fields['search_row'].setValue(min(self.meta['rows']-1,int(fraction*self.meta['rows'])))
     def values(self):
         values={k:v.value() for k,v in self.fields.items()};values.update(method=self.method.currentText(),binning=self.binning.currentIndex(),remove_stripe_method=self.stripes.currentText(),prompt=self.prompt.text().strip());return values
     def apply(self):
@@ -198,6 +203,8 @@ class InputBrowser(ImageBrowser):
         source=self.source.currentText();shape=self.meta.get('white_shape') if source=='Flat' else self.meta.get('dark_shape') if source=='Dark' else [self.meta['projections']]
         count=shape[0] if len(shape)==3 or source=='Projection' else 1
         self.navigation(count);self.frame.setValue(max(1,count//2+1));self.show_frame()
+    def preview_ready(self):
+        self.image_info.setText(self.image_info.text()+f' · {self.loaded_key[1]} {self.loaded_key[2]+1}')
     def show_frame(self):
         source,index=self.source.currentText(),self.frame.value()-1
         self.request((self.path,source,index,tuple(self.tool['source_stat'])),lambda:read_hdf5(self.path,source,index,self.tool['source_stat']))

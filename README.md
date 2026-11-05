@@ -1,4 +1,4 @@
-# MomoBot 0.8.0
+# MomoBot 0.8.1
 
 A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists tasks; the right side contains the conversation and message composer. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
 

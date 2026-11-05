@@ -1,6 +1,6 @@
 # SOP validation — 2026-11-04
 
-The original 118 regression checks were extended with conversation edge cases for one-confirmation dispatch, negative tilts, explicit-only center search, source switches and in-place updates, invalid edits, trial numbering and ambiguity, interrupted reads, cancellation, timing-cache invalidation, restart recovery, preprocessing forwarding, manual/automatic selection and follow-on task creation. All 147 final regression/GUI checks passed before deployment. These tests include fake job submission to verify dispatch boundaries; they are not all GPU computations.
+The original 118 regression checks were extended with conversation edge cases for one-confirmation dispatch, negative tilts, explicit-only center search, source switches and in-place updates, invalid edits, trial numbering and ambiguity, interrupted reads, cancellation, timing-cache invalidation, restart recovery, preprocessing forwarding, manual/automatic selection and follow-on task creation. All 148 final regression/GUI checks passed before deployment. These tests include fake job submission to verify dispatch boundaries; they are not all GPU computations.
 
 Four native Windows functional chains also passed against existing scientific data:
 

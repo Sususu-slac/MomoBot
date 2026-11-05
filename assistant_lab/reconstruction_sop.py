@@ -114,9 +114,9 @@ class ReconstructionSOP:
             target=re.split(r'[,.;，。]|\s+(?:and|using|on|with|then|confidence|gpu|range|binning|center)\b',m[1],maxsplit=1,flags=re.I)[0].strip()
             if target.lower() not in ('instance','text'):
                 t['settings'].update(prompt=target,prompt_mode='text');t['sop']['target_confirmed']=True
-        if re.search(r'(?:angle.*(?:trial|candidate|sweep)|(?:try|trial).*angle)|角度.*(?:候选|试|抖动)|(?:试|抖动).*角度',clean,re.I):
+        if re.search(r'(?:angle.*(?:trial|candidate|sweep)|(?:try|trial).*angle|(?:find|search for|optimi[sz]e).*?(?:lamino(?:graphy)? |tilt )?angle)|角度.*(?:候选|试|抖动)|(?:试|抖动|寻找|查找|找).*?(?:倾斜角|lamino angle|角度)',clean,re.I):
             if t['sop'].get('trial_kind')!='angle':t['settings'].update(trial_width=2.,trial_step=.25)
-            t['sop'].update(trial_kind='angle',mode='manual',force_trials=True)
+            t['sop'].update(trial_kind='angle',mode='manual',force_trials=True,geometry_confirmed=True);t['settings']['geometry']='laminography'
         for key,pattern in [('dezinger',r'\bdezinger\s*[:=]?\s*(\d+)'),('bright_ratio',r'\bbright[- ]ratio\s*[:=]?\s*(\d+(?:\.\d+)?)')]:
             match=re.search(pattern,clean,re.I)
             if match:t['settings'][key]=int(match[1]) if key=='dezinger' else float(match[1]);changes[key]=t['settings'][key]

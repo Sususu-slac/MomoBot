@@ -18,7 +18,7 @@ Traditional trials create numbered previews and open their folder. Choose by num
 
 Changing an input or rejecting an edit invalidates confirmation. Cancel, Safe Stop, retry and restart preserve task boundaries and partial outputs. Result queries read saved jobs for the current input. After reconstruction, segment these results creates a separate task using the saved output folder.
 
-See [the SOP guide](docs/RECONSTRUCTION_SOP.md) and [validation scope](docs/SOP_VALIDATION_20261104.md). 147 regression/GUI checks and four small native scientific workflows passed before deployment. These are functional checks, not a new reconstruction-quality or language-model benchmark.
+See [the SOP guide](docs/RECONSTRUCTION_SOP.md) and [validation scope](docs/SOP_VALIDATION_20261104.md). 148 regression/GUI checks and four small native scientific workflows passed before deployment. These are functional checks, not a new reconstruction-quality or language-model benchmark.
 
 ## Phone access
 

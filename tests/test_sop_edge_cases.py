@@ -43,6 +43,9 @@ class WorkflowEdges(unittest.TestCase):
  def test_changing_tilt_keeps_known_center_when_geometry_is_unchanged(self):
   self.prepare(f'Reconstruct "{self.source}" using lamino tilt angle -20 center 31.5 rows 8 to 12.')
   self.send('lamino angle -21');self.assertEqual(self.t['settings']['center'],31.5);self.assertEqual(self.t['settings']['lamino_angle'],-21);self.assertEqual(self.t['sop']['phase'],'confirm')
+ def test_find_angle_routes_to_trials_and_preserves_full_method(self):
+  self.prepare(f'Find laminography angle for "{self.source}", center 31.5, tilt angle -20.')
+  self.assertEqual(self.t['sop']['phase'],'trial_offer');self.assertEqual(self.t['sop']['trial_kind'],'angle');self.send('generate candidates');self.assertEqual(self.calls[-1][0]['action'],'try_angle');self.assertEqual(self.t['settings']['method'],'fourierrec')
  def test_signed_negative_tilt_and_natural_confirmation(self):
   self.prepare(f'Reconstruct "{self.source}" using lamino, tilt angle -20, center 31.5, rows 8 to 12, 2x2 binning.')
   self.assertEqual(self.t['sop']['phase'],'confirm');self.send('yes, go ahead');self.assertEqual(len(self.calls),1);self.assertEqual(self.calls[0][1]['lamino_angle'],-20)

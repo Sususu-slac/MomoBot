@@ -40,7 +40,7 @@ def apply_defaults(task):
     automatic=task['kind'] in ('find_center','analyze') or task.get('center_mode')=='auto'
     if not automatic:mark(task,'prompt')
     mark(task,'limit','split','epochs')
-    if task['kind'] in ('try_center','try_angle'):
+    if task['kind'] in ('try_center','try_angle') and not task.get('sop',{}).get('enabled'):
         if task['kind']=='try_angle':s['geometry']='laminography';s['method']='linerec'
         elif s['geometry']=='laminography':s['method']='linerec'
 

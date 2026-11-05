@@ -69,7 +69,7 @@ class ModelPickerTests(unittest.TestCase):
  def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();root=Path(self.tmp.name)
-  with patch('assistant_lab.chat_window.load_preferences',return_value={}):self.window=ChatWindow(Conversations(root/'conversations'),JobStore(root/'jobs'),autoload=False)
+  with patch('assistant_lab.chat_window.load_preferences',return_value={}):self.window=ChatWindow(Conversations(root/'conversations'),JobStore(root/'jobs'),autoload=False,model_first=False)
  def tearDown(self):self.window.close();self.app.processEvents();self.tmp.cleanup()
  def test_switches_and_persists_available_models(self):
   self.assertEqual(list(MODEL_PROFILES),['gemma4'])

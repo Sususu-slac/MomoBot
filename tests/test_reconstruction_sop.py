@@ -19,7 +19,7 @@ class SOPTests(unittest.TestCase):
   for p in [self.source,self.other]:
    with h5py.File(p,'w') as h:
     h['exchange/data']=np.ones((7,32,64),np.uint16);h['exchange/data_white']=np.ones((1,32,64),np.uint16)*2;h['exchange/data_dark']=np.zeros((1,32,64),np.uint16);h['exchange/theta']=np.linspace(0,360,7,dtype=np.float32)
-  self.w=ChatWindow(Conversations(self.r/'conversations'),JobStore(self.r/'jobs'),autoload=False);self.t=self.w.current;self.t['settings']['output_root']=str(self.r/'jobs');self.calls=[]
+  self.w=ChatWindow(Conversations(self.r/'conversations'),JobStore(self.r/'jobs'),autoload=False,model_first=False);self.t=self.w.current;self.t['settings']['output_root']=str(self.r/'jobs');self.calls=[]
   def submit(store,action,settings,plan=None):
    folder=store.root/str(len(self.calls));folder.mkdir(parents=True);job=dict(id=folder.name,action=action,job_dir=str(folder));self.calls.append((job,copy.deepcopy(settings)));atomic_json(folder/'job.json',{**job,'settings':settings});atomic_json(folder/'job_status.json',dict(state='queued'));return job
   self.submitpatch=patch.object(JobStore,'submit',autospec=True,side_effect=submit);self.submitpatch.start()

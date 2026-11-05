@@ -15,7 +15,7 @@ class TaskDeletionTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
   self.repo=Conversations(self.root/'conversations');self.store=JobStore(self.root/'jobs')
-  self.window=ChatWindow(self.repo,self.store,autoload=False)
+  self.window=ChatWindow(self.repo,self.store,autoload=False,model_first=False)
  def tearDown(self):
   self.window.busy=False;self.window.close();self.app.processEvents();self.tmp.cleanup()
  def delete(self,identity=None):
@@ -25,13 +25,13 @@ class TaskDeletionTests(unittest.TestCase):
   self.window.composer.setPlainText('draft that must disappear')
   self.assertTrue(self.delete());self.assertEqual(self.window.current_id,first['id'])
   self.assertFalse((self.repo.root/(deleted['id']+'.json')).exists())
-  self.window.close();self.window=ChatWindow(self.repo,self.store,autoload=False)
+  self.window.close();self.window=ChatWindow(self.repo,self.store,autoload=False,model_first=False)
   self.assertNotIn(deleted['id'],self.window.tasks);self.assertEqual(len(self.window.tasks),1)
  def test_deleting_last_task_keeps_empty_list_after_restart_and_can_create_new(self):
   deleted=self.window.current
   self.assertTrue(self.delete());self.assertEqual(self.window.task_list.count(),0)
   self.assertIsNone(self.window.current);self.assertFalse(self.window.send_btn.isEnabled());self.assertFalse(self.window.attach_btn.isEnabled())
-  self.window.close();self.window=ChatWindow(self.repo,self.store,autoload=False)
+  self.window.close();self.window=ChatWindow(self.repo,self.store,autoload=False,model_first=False)
   self.assertEqual(self.window.tasks,{});self.assertEqual(self.window.task_list.count(),0)
   self.window.new_task();self.assertNotEqual(self.window.current_id,deleted['id']);self.assertTrue(self.window.send_btn.isEnabled())
  def test_delete_inactive_task_preserves_current_draft(self):

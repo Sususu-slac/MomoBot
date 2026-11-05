@@ -1,8 +1,16 @@
-# Reconstruction chat workflow — MomoBot 0.8.0
+# Reconstruction chat workflow — MomoBot 0.9.0
 
 Paste an HDF5 file path or a folder containing HDF5 files. MomoBot reads projection count, detector dimensions, dtype, file size, theta range and flat/dark shapes before planning computation. If a folder contains several files, choose one by its displayed number. Unquoted Windows HDF5 paths containing spaces are supported.
 
 Specify Tomography or Laminography. MomoBot asks when geometry is unspecified: both acquisitions may contain theta, so theta alone cannot select the geometry. Laminography needs the signed, nonzero acquisition tilt angle; negative angles are preserved. Flat/dark correction must match the acquisition. This chat workflow currently uses the input HDF5’s flat/dark frames; a request for a separate external flat file is explicitly rejected rather than interpreting it as another input.
+
+## Understanding before execution
+
+Each accepted reconstruction message is interpreted by the local Gemma model before the SOP handles it. This includes a bare path, short answers, edits, candidate choices, result questions and confirmation. The model supplies typed intent/settings; application checks enforce supported actions, provided paths, units, finite values, detector limits, current state and confirmation. No model-ready/understanding failure silently reuses a prior default or bypasses the model. The visible activity describes model understanding and validation, not private reasoning.
+
+A standalone greeting remains immediate. During a pending model/metadata call, cancellation and brief status controls respond directly so the user can stop or inspect the pending request. Additional computation requests are not silently queued. Once the call finishes, late cancelled interpretations are discarded. The desktop Safe Stop button directly targets the selected scientific worker.
+
+For example, `please 807.5 ± 50 px, step 1` means center 807.5, half-width 50, range 757.5–857.5, step 1. It only changes settings. `Generate candidates` explicitly starts the configured trial stage. If a parameter remains ambiguous, MomoBot asks instead of claiming an old setting was changed.
 
 ## Traditional reconstruction
 

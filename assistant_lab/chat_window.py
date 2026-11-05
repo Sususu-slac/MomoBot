@@ -94,8 +94,8 @@ class MessageView(QWidget):
         self.process.setVisible(working)
 
 class ChatWindow(QMainWindow):
-    def __init__(self,conversations=None,jobs=None,autoload=True):
-        super().__init__();self.setWindowTitle('MomoBot '+VERSION);self.resize(1280,900);self.setMinimumSize(900,640)
+    def __init__(self,conversations=None,jobs=None,autoload=True,model_first=True):
+        super().__init__();self.reconstruction_model_first=model_first;self.setWindowTitle('MomoBot '+VERSION);self.resize(1280,900);self.setMinimumSize(900,640)
         self.setWindowIcon(QIcon(str(APP_ICON)));self.setStyleSheet(STYLE)
         self.repo=conversations or Conversations();self.tasks={t['id']:t for t in self.repo.all()};self.store=jobs or JobStore()
         for t in self.tasks.values():
@@ -395,6 +395,60 @@ class ChatWindow(QMainWindow):
         if self.busy and quick_reply(text) is None and not control_input(text):return
         self.composer.clear();task['draft']=''
         self.submit_text(task,text)
+    def _is_reconstruction_message(self,task,text):
+        from .reconstruction_sop import KINDS,input_paths,clean_text
+        if task.get('kind') in KINDS or self.sop.enabled(task):return True
+        paths=input_paths(text)
+        if any(Path(p).suffix.lower() in ('.h5','.hdf5','.hdf') for p in paths):return True
+        if task.get('kind') is None:
+            for path in paths:
+                try:
+                    folder=Path(path)
+                    if folder.is_dir() and any(x.is_file() and x.suffix.lower() in ('.h5','.hdf5','.hdf') for x in folder.iterdir()):return True
+                except OSError:pass
+        return bool(__import__('re').search(r'\brecon(?:struct(?:ion)?)?\b|重建|旋转中心|找中心|rotation (?:center|axis)|(?:find|search|try|optimize).*\bcent(?:er|re)\b|center (?:search|trials?|candidates)|\b(?:tomography|laminography|tomo|lamino)\b',clean_text(text),__import__('re').I))
+
+    def _reconstruction_model_turn(self,task,text,remote=False):
+        if self.busy:
+            value=text.lower().strip(' .!。！')
+            if value in ('status','progress','进度'):
+                self.add(task,'assistant',say(task,'Gemma is still understanding the previous message.','Gemma 仍在理解上一条消息。'));self.render_if_current(task)
+            elif control_input(text):self.stop_task(task)
+            return
+        if not self.model_ready or not self.model.running:
+            self.sop.reject(task,say(task,'The language model is not ready. No parameters were changed; wait for it to load or reload the model.','语言模型尚未就绪。没有修改参数，请等待模型加载或重新加载。'));return
+        self.add(task,'assistant','');reply=task['messages'][-1]['id'];task['reply_id']=reply
+        activity(task,reply,say(task,'Gemma is understanding your reconstruction request…','Gemma 正在理解你的重建需求……'));self.render_if_current(task)
+        captured=copy.deepcopy(task)
+        def stamp(value):
+            return json.dumps({'settings':value['settings'],'state':value['state'],'phase':value.get('sop',{}).get('phase')},sort_keys=True)
+        original=stamp(captured)
+        def understand():
+            try:return self.model.understand_reconstruction(text,captured)
+            except Exception as error:return None,{'error':str(error),'model_called':True}
+        def understood(result):
+            turn,meta=result;entry=find_entry(task,reply)
+            if entry is None:return
+            finish_activity(task,reply)
+            if task.get('cancel_requested'):
+                entry['text']=say(task,'Cancelled; the interpretation was not applied.','已取消，未采用这次理解结果。');self.save(task);self.render_if_current(task);return
+            if turn is None:
+                entry['text']=say(task,'I could not fully understand that request: ','未能完整理解这条请求：')+meta['error'];self.sop.reject(task,entry['text']);return
+            entry['text']=turn['message'] if turn['intent'] in ('explain','clarify') else say(task,'I understood your request; checking the actual task parameters.','已理解你的请求，正在核对实际任务参数。');entry['interpretation']={'intent':turn['intent'],'operation':turn['operation'],'updates':turn['updates'],**meta};self.save(task);self.render_if_current(task)
+            def apply_when_idle():
+                if task.get('_deleted') or self.closing:return
+                if self.busy:QTimer.singleShot(20,apply_when_idle);return
+                if task.get('cancel_requested'):return
+                if turn['intent'] not in ('status','result','explain','clarify','cancel') and stamp(task)!=original:
+                    self.sop.reject(task,say(task,'The task changed while I interpreted your message. Please review the current state first.','理解消息期间任务状态发生变化，请先核对当前状态。'));return
+                try:
+                    from .reconstruction_turns import apply_turn
+                    apply_turn(self.sop,task,text,turn,remote)
+                except (ValueError,OSError,KeyError,TypeError) as error:self.sop.reject(task,str(error))
+                self.save(task);self.render_if_current(task)
+            QTimer.singleShot(0,apply_when_idle)
+        self.background(understand,understood,task['id'])
+
     def submit_text(self,task,text,remote=False):
         if not task or task.get('_deleted'):return
         instant=quick_reply(text)
@@ -406,6 +460,9 @@ class ChatWindow(QMainWindow):
         self.add(task,'user',text)
         if instant is not None:
             self.add(task,'assistant',instant,sticker=greeting_sticker(text));self.render();return
+        if self.reconstruction_model_first and self._is_reconstruction_message(task,text):
+            if not self.busy:task['cancel_requested']=False
+            self._reconstruction_model_turn(task,text,remote);return
         task['cancel_requested']=False
         lowered=text.lower().strip('.! ')
         if lowered in ('stop','safe stop','cancel task','stop the task','停止','停下','停止任务'):self.stop_task(task);return
@@ -530,6 +587,8 @@ class ChatWindow(QMainWindow):
         task['cancel_requested']=True;task['run_requested']=False
         if self.sop.enabled(task) and task['sop']['phase']=='reading':
             self.sop.phase(task,'paused');self.add(task,'assistant',say(task,'Cancelled the pending file request. No reconstruction has started.','已取消文件读取请求，尚未开始重建。'));self.render_if_current(task);return
+        if self.reconstruction_model_first and self.busy and self.sop.enabled(task) and task['state'] not in ('running','stopping'):
+            self.sop.phase(task,'paused');self.add(task,'assistant',say(task,'Cancelled the pending interpretation. No parameters or jobs will be changed.','已取消这次理解请求，不会修改参数或启动任务。'));self.render_if_current(task);return
         job=self.latest(task)
         if job and task['state'] in ('running','stopping'):
             self.store_for(Path(job['job_dir']).parent).stop(job);task['state']='stopping';self.add(task,'assistant','Safe Stop requested. Waiting for this task to stop.');self.refresh_list()

@@ -44,18 +44,36 @@ User: 把这个文件夹里的图片分割一下。
 '''
 
 class ChatModel(LocalModel):
-    def structured_reply(self,messages):
+    def structured_reply(self,messages,schema=None,max_tokens=None):
+        schema=CHAT_SCHEMA if schema is None else schema
+        max_tokens=self.max_output_tokens if max_tokens is None else max_tokens
         if self.adapter=='completion':
             rendered=post_json(self.base_url+'/apply-template',{'messages':messages,'chat_template_kwargs':{'enable_thinking':False,'preserve_thinking':False}},token=self.token)
-            return post_json(self.base_url+'/completion',dict(prompt=rendered['prompt'],n_predict=self.max_output_tokens,cache_prompt=True,json_schema=CHAT_SCHEMA,**self.sampling),token=self.token)
+            return post_json(self.base_url+'/completion',dict(prompt=rendered['prompt'],n_predict=max_tokens,cache_prompt=True,json_schema=schema,**self.sampling),token=self.token)
         messages=copy.deepcopy(messages)
-        messages[0]['content']+='\n\nReturn one JSON object matching this schema. Include each update field at most once.\n'+json.dumps(CHAT_SCHEMA)
-        request=dict(messages=messages,max_tokens=self.max_output_tokens,cache_prompt=True,chat_template_kwargs=self.template_kwargs,
-            response_format={'type':'json_schema','json_schema':{'name':'momobot_plan','strict':True,'schema':CHAT_SCHEMA}},**self.sampling)
+        messages[0]['content']+='\n\nReturn one JSON object matching this schema. Include each update field at most once.\n'+json.dumps(schema)
+        request=dict(messages=messages,max_tokens=max_tokens,cache_prompt=True,chat_template_kwargs=self.template_kwargs,
+            response_format={'type':'json_schema','json_schema':{'name':'momobot_plan','strict':True,'schema':schema}},**self.sampling)
         if self.thinking=='low':request['reasoning_effort']='low'
         response=post_json(self.base_url+'/v1/chat/completions',request,token=self.token)
         choice=response['choices'][0]
         return dict(content=choice['message'].get('content') or '',stopped_limit=choice.get('finish_reason')=='length',usage=response.get('usage',{}),timings=response.get('timings',{}))
+    def understand_reconstruction(self,text,task):
+        from .reconstruction_understanding import TURN_SCHEMA,SYSTEM as RECON_SYSTEM,model_context,parse_turn
+        context=model_context(task,text);messages=[{'role':'system','content':RECON_SYSTEM},{'role':'user','content':json.dumps(context,ensure_ascii=False)}]
+        began=time.perf_counter();last=None
+        for attempt in range(2):
+            response=self.structured_reply(messages,schema=TURN_SCHEMA,max_tokens=1400)
+            try:
+                if response.get('stopped_limit'):raise ValueError('Model interpretation was truncated')
+                turn=parse_turn(response['content'],text,task)
+                return turn,dict(model_called=True,seconds=time.perf_counter()-began,attempts=attempt+1,usage=response.get('usage',{}))
+            except (ValueError,KeyError,TypeError) as error:
+                last=error
+                messages.append({'role':'assistant','content':response.get('content','')})
+                messages.append({'role':'user','content':'Validation failed: '+str(error)+'. Re-read the same original message. Return a corrected interpretation, or intent clarify with no updates. Never silently keep an old default.'})
+        raise ValueError('Could not fully understand the reconstruction request: '+str(last))
+
     def converse(self,text,task):
         unsupported=unsupported_request(text)
         if unsupported:

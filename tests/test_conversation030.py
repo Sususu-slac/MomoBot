@@ -43,7 +43,7 @@ class ChatRenderTests(unittest.TestCase):
  def setUpClass(cls):
   cls.app=QApplication.instance() or QApplication([]);QFontDatabase.addApplicationFont('C:/Windows/Fonts/segoeui.ttf');cls.app.setFont(QFont('Segoe UI',10))
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False);self.w.show();self.pump(.2)
+  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.w=ChatWindow(Conversations(self.root/'conversations'),JobStore(self.root/'jobs'),autoload=False,model_first=False);self.w.show();self.pump(.2)
  def pump(self,duration):
   until=time.monotonic()+duration
   while time.monotonic()<until:self.app.processEvents();time.sleep(.005)

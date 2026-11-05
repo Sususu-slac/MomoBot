@@ -139,7 +139,7 @@ class ReconstructionSOP:
         for p in paths:
             if Path(p).suffix.lower() in ('.pt','.pth') and re.search(r'checkpoint|权重',clean,re.I):t['settings']['checkpoint']=p;changes['checkpoint']=p
         return changes
-    def _source(self,t,path,text,remote):
+    def _source(self,t,path,text,remote,understood=None):
         if t.get('state') in ('running','stopping'):
             self.tell(t,'A task is running. Stop it safely or create a new task before replacing its input.','当前任务正在运行。请先安全停止，或新建任务再选择其他输入。');return
         # Reset all source-dependent decisions, including inherited centers and instance references.
@@ -149,7 +149,11 @@ class ReconstructionSOP:
         t['sop']=dict(enabled=True,phase='reading',geometry_confirmed=False,angle_confirmed=False,mode=None,source=path,candidates=[],timings=[],remote=remote,overview_shown=overview_shown)
         t['cancel_requested']=False
         t['settings']['input_hdf5']=path
-        try:self._parameters(t,text)
+        try:
+            if understood is None:self._parameters(t,text)
+            else:
+                from .reconstruction_turns import apply_fields
+                apply_fields(self,t,understood)
         except ValueError as e:self.phase(t,'path');self.tell(t,str(e));return
         self.tell(t,'Reading HDF5 information…','正在读取 HDF5 文件信息……')
         def read():
@@ -167,13 +171,19 @@ class ReconstructionSOP:
             t['metadata']=meta
             mark(t,'input_hdf5','rows');n=meta['rows'];s=t['settings']
             if not t['sop'].get('explicit_rows'):s.update(start_row=0,end_row=n)
+            if t['sop'].get('model_row_scope')=='middle':s.update(start_row=max(0,n//2-2),end_row=min(n,n//2+3))
             t['sop']['source_stat']=[Path(path).stat().st_size,Path(path).stat().st_mtime_ns]
             t['title']='Reconstruct · '+Path(path).stem
             summary=(f"HDF5: {path}\nProjections: {meta['projections']} · Detector: {n} × {meta['width']}\n"
                      f"Pixels: {meta.get('dtype','not recorded')} · Size: {meta.get('size_bytes',0)/1e9:.2f} GB\n"
                      f"Theta: {meta.get('theta_min','?')}–{meta.get('theta_max','?')} {meta.get('theta_unit','')}\n"
                      f"Flat/dark frames: {meta.get('white_shape','?')} / {meta.get('dark_shape','?')}")
-            self.tell(t,summary);self.next(t)
+            self.tell(t,summary)
+            if understood is not None:
+                from .reconstruction_turns import validate_current
+                try:validate_current(t)
+                except ValueError as error:self.reject(t,error);return
+            self.next(t)
         self.w.background(read,done,t['id'])
     def next(self,t):
         p=t['sop'];s=t['settings']

@@ -1,4 +1,4 @@
-# MomoBot 0.8.2
+# MomoBot 0.9.0
 
 A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists tasks; the right side contains the conversation and message composer. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
 
@@ -18,7 +18,9 @@ Traditional trials create numbered previews and open their folder. Choose by num
 
 Changing an input or rejecting an edit invalidates confirmation. Cancel, Safe Stop, retry and restart preserve task boundaries and partial outputs. Result queries read saved jobs for the current input. After reconstruction, segment these results creates a separate task using the saved output folder.
 
-See [the SOP guide](docs/RECONSTRUCTION_SOP.md) and [validation scope](docs/SOP_VALIDATION_20261104.md). 148 regression/GUI checks and four small native scientific workflows passed before deployment. These are functional checks, not a new reconstruction-quality or language-model benchmark.
+Every accepted reconstruction turn goes to the local Gemma model first, including short geometry/mode answers, parameter corrections, confirmations and result questions. A typed interpretation is validated before the reconstruction SOP applies it. An unavailable model or invalid interpretation cannot silently fall back to a fixed reply or an old parameter value. Greetings remain immediate; emergency cancellation while an interpretation is pending takes priority.
+
+See [the SOP guide](docs/RECONSTRUCTION_SOP.md), [model-first validation](docs/MODEL_FIRST_VALIDATION_20261104.md) and [earlier scientific validation](docs/SOP_VALIDATION_20261104.md). Functional testing does not establish reconstruction quality or general language-model accuracy.
 
 ## Phone access
 
@@ -43,3 +45,9 @@ Run `python -m unittest discover -s tests -p "test_*.py"`. SOP tests need the re
 ## 0.8.2 — reconstruction introduction
 
 A new reconstruction request first explains Traditional and Smart (Text/Instance) workflows, then asks for the data when missing. Providing a path reads and displays HDF5 information before asking for geometry. The introduction is shown once per workflow. The window title now displays the running version. 151 regression/GUI checks passed; the exact quoted nmc_32_113.h5 command returned metadata and asked for geometry without launching computation.
+
+## 0.9.0 — model-first reconstruction messages
+
+Gemma interprets each reconstruction message before the application checks paths, units, dimensions and workflow state. For example, `please 807.5 ± 50 px, step 1` updates the candidate range to **757.5–857.5**, step **1**, without starting computation. Relative changes such as `make it twice as wide` also use the current settings. Explicit generation/search commands and reviewed-plan confirmation remain distinct from configuration.
+
+The UI shows genuine model activity while waiting and removes the activity when complete. Actual execution parameters are echoed from validated settings. Failed interpretations invalidate stale confirmations; cancellation discards late model updates. Model text cannot execute arbitrary commands or establish scientific results. Existing reconstruction/scoring algorithms and the GPU assignment (Gemma GPU 1, scientific defaults GPU 0) are retained.

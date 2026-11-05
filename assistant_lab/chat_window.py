@@ -6,7 +6,7 @@ from PySide6.QtGui import QIcon,QDesktopServices
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
  QListWidget,QListWidgetItem,QSplitter,QScrollArea,QPlainTextEdit,QMenu,QFileDialog,
  QInputDialog,QDialog,QDialogButtonBox,QSizePolicy,QFrame,QMessageBox)
-from .config import STATE_ROOT,ROOT,MODEL,DEFAULTS,MODEL_PROFILES,DEFAULT_PROFILE,load_preferences,save_preferences
+from .config import STATE_ROOT,ROOT,MODEL,DEFAULTS,MODEL_PROFILES,DEFAULT_PROFILE,VERSION,load_preferences,save_preferences
 from .conversations import (Conversations,TITLES,choose_kind,step,question,message,mark,action,review,
  apply_response,set_source,inspect_source,accept_source,PATHS)
 from .chat_model import ChatModel
@@ -95,7 +95,7 @@ class MessageView(QWidget):
 
 class ChatWindow(QMainWindow):
     def __init__(self,conversations=None,jobs=None,autoload=True):
-        super().__init__();self.setWindowTitle('MomoBot');self.resize(1280,900);self.setMinimumSize(900,640)
+        super().__init__();self.setWindowTitle('MomoBot '+VERSION);self.resize(1280,900);self.setMinimumSize(900,640)
         self.setWindowIcon(QIcon(str(APP_ICON)));self.setStyleSheet(STYLE)
         self.repo=conversations or Conversations();self.tasks={t['id']:t for t in self.repo.all()};self.store=jobs or JobStore()
         for t in self.tasks.values():

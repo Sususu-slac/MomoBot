@@ -46,6 +46,16 @@ class WorkflowEdges(unittest.TestCase):
  def test_find_angle_routes_to_trials_and_preserves_full_method(self):
   self.prepare(f'Find laminography angle for "{self.source}", center 31.5, tilt angle -20.')
   self.assertEqual(self.t['sop']['phase'],'trial_offer');self.assertEqual(self.t['sop']['trial_kind'],'angle');self.send('generate candidates');self.assertEqual(self.calls[-1][0]['action'],'try_angle');self.assertEqual(self.t['settings']['method'],'fourierrec')
+ def test_bare_reconstruction_request_explains_workflows_and_asks_for_data(self):
+  self.send('重建');text='\n'.join(m['text'] for m in self.t['messages'])
+  self.assertIn('传统重建',text);self.assertIn('智能重建',text);self.assertIn('哪份数据',text);self.assertEqual(self.t['sop']['phase'],'path');self.assertFalse(self.calls)
+ def test_overview_is_not_repeated_after_user_provides_path(self):
+  self.send('重建');self.send(str(self.source));text='\n'.join(m['text'] for m in self.t['messages'])
+  self.assertEqual(text.count('我可以帮你用两种方式重建'),1);self.assertIn('Projections: 7',text);self.assertEqual(self.t['sop']['phase'],'geometry');self.assertFalse(self.calls)
+ def test_quoted_path_followed_by_reconstruct_it_returns_metadata_first(self):
+  path=self.r/'nmc_32_113.h5';self.source.rename(path);self.send(f'"{path}" reconstruct it')
+  text='\n'.join(m['text'] for m in self.t['messages'])
+  self.assertIn('Traditional',text);self.assertIn('Smart',text);self.assertIn('Projections: 7',text);self.assertLess(text.index('Traditional'),text.index('Projections: 7'));self.assertEqual(self.t['sop']['phase'],'geometry');self.assertFalse(self.calls)
  def test_signed_negative_tilt_and_natural_confirmation(self):
   self.prepare(f'Reconstruct "{self.source}" using lamino, tilt angle -20, center 31.5, rows 8 to 12, 2x2 binning.')
   self.assertEqual(self.t['sop']['phase'],'confirm');self.send('yes, go ahead');self.assertEqual(len(self.calls),1);self.assertEqual(self.calls[0][1]['lamino_angle'],-20)

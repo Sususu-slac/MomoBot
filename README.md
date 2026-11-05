@@ -1,4 +1,4 @@
-# MomoBot 0.8.1
+# MomoBot 0.8.2
 
 A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists tasks; the right side contains the conversation and message composer. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
 
@@ -39,3 +39,7 @@ The assistant arranges a fixed set of scientific tasks; model text is not arbitr
 ## Development
 
 Run `python -m unittest discover -s tests -p "test_*.py"`. SOP tests need the reconstruction metadata/exemplar source; set BL62_RECON_ROOT accordingly. GPU integration checks are documented separately. Model files, user state and datasets are excluded from the repository and releases.
+
+## 0.8.2 — reconstruction introduction
+
+A new reconstruction request first explains Traditional and Smart (Text/Instance) workflows, then asks for the data when missing. Providing a path reads and displays HDF5 information before asking for geometry. The introduction is shown once per workflow. The window title now displays the running version. 151 regression/GUI checks passed; the exact quoted nmc_32_113.h5 command returned metadata and asked for geometry without launching computation.

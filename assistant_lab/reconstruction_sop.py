@@ -60,6 +60,13 @@ class ReconstructionSOP:
     def bootstrap(self,t):
         if self.enabled(t):return
         t['sop']=dict(enabled=True,phase='path',geometry_confirmed=False,angle_confirmed=False,mode=None,source='',candidates=[],timings=[])
+    def overview(self,t):
+        if t['sop'].get('overview_shown'):return
+        t['sop']['overview_shown']=True
+        self.tell(t,
+            'I can help you reconstruct in two ways:\n1. Traditional: compare trial images and choose the rotation center yourself.\n2. Smart: SAM3 finds the center using a Text or Instance feature, then reconstructs.\nIf you already know the center, you can provide it directly. Both workflows support Tomo and Lamino.',
+            '我可以帮你用两种方式重建：\n1. 传统重建：先生成候选图，由你挑选旋转中心。\n2. 智能重建：用 Text 或 Instance 特征让 SAM3 自动找中心，再重建。\n如果已有旋转中心，也可以直接提供。两种流程均支持 Tomo 和 Lamino。')
+
     def _parameters(self,t,text):
         # Parse atomically: a rejected edit cannot partly mutate a confirmed plan.
         draft=copy.deepcopy(t)
@@ -136,9 +143,10 @@ class ReconstructionSOP:
         if t.get('state') in ('running','stopping'):
             self.tell(t,'A task is running. Stop it safely or create a new task before replacing its input.','当前任务正在运行。请先安全停止，或新建任务再选择其他输入。');return
         # Reset all source-dependent decisions, including inherited centers and instance references.
+        overview_shown=t.get('sop',{}).get('overview_shown',False)
         kept={k:t['settings'][k] for k in ('gpu','output_root')}
         t['settings']={**copy.deepcopy(DEFAULTS),**kept};choose_kind(t,'reconstruct');t['metadata']={};t['done']=[];t['center_mode']=None
-        t['sop']=dict(enabled=True,phase='reading',geometry_confirmed=False,angle_confirmed=False,mode=None,source=path,candidates=[],timings=[],remote=remote)
+        t['sop']=dict(enabled=True,phase='reading',geometry_confirmed=False,angle_confirmed=False,mode=None,source=path,candidates=[],timings=[],remote=remote,overview_shown=overview_shown)
         t['cancel_requested']=False
         t['settings']['input_hdf5']=path
         try:self._parameters(t,text)
@@ -338,6 +346,7 @@ class ReconstructionSOP:
         if unsupported:
             self.tell(t,*MESSAGES[unsupported]);return True
         self.bootstrap(t);p=t['sop'];p['remote']=remote
+        self.overview(t)
         if p['phase'] in ('complete','center_ready') and not recon_words and self.handoff(t,text,remote):return True
         changed=False
         if len(h5)==1 and Path(h5[0]).is_file():
@@ -356,7 +365,7 @@ class ReconstructionSOP:
                 if len(files)==1:self._source(t,files[0],text,remote)
                 elif files:p['files']=files;p['file_request']=text;self.phase(t,'file');self.tell(t,'Choose one HDF5:\n'+'\n'.join(f'{i}. {x}' for i,x in enumerate(files,1)),'请选择一份 HDF5：\n'+'\n'.join(f'{i}. {x}' for i,x in enumerate(files,1)))
                 else:self.tell(t,'No HDF5 files in that folder. Please paste an exact file path.','该文件夹没有 HDF5，请粘贴文件完整路径。')
-            else:self.tell(t,'Please paste the exact HDF5 file path.','请先粘贴 HDF5 文件的完整路径。')
+            else:self.tell(t,'Which data would you like to reconstruct? Paste the full HDF5 path. I will read and show the file information first.','你要重建哪份数据？请粘贴 HDF5 文件的完整路径，我会先读取并返回文件信息。')
             return True
         if t['state'] in ('running','stopping'):
             if low in ('cancel','pause','取消','暂停'):

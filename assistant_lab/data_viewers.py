@@ -114,7 +114,10 @@ class ImageBrowser(QDialog):
         contrast.addWidget(QLabel('Low'));contrast.addWidget(self.low);contrast.addWidget(QLabel('High'));contrast.addWidget(self.high);auto=QPushButton('Auto');auto.clicked.connect(self.auto);contrast.addWidget(auto);fit=QPushButton('Fit');fit.clicked.connect(self.canvas.fit_image);contrast.addWidget(fit);self.lock_display=QCheckBox('Lock');self.lock_display.setToolTip('Keep the display range when changing images');contrast.addWidget(self.lock_display);self.has_display_range=False;v.addLayout(contrast)
         self.image_info=QLabel();self.image_info.setTextFormat(Qt.PlainText);self.image_info.setWordWrap(True);v.addWidget(self.image_info);self.split.addWidget(right);self.split.setSizes([320,860])
         self.status=QLabel();self.status.setWordWrap(True);self.status.setTextFormat(Qt.PlainText);self.layout_.addWidget(self.status)
+        self.feedback=QLabel();self.feedback.setWordWrap(True);self.feedback.setTextFormat(Qt.PlainText);self.feedback.hide();self.layout_.addWidget(self.feedback)
         self.debounce=QTimer(self);self.debounce.setSingleShot(True);self.debounce.setInterval(100);self.debounce.timeout.connect(self.start_read)
+    def show_feedback(self,text,error=False):
+        self.feedback.setText(text);self.feedback.setStyleSheet('color:#d54d4d' if error else '');self.feedback.setVisible(bool(text))
     def request(self,key,call):
         self.request_key=key;self.pending=(key,call);self.array=None;self.loaded_key=None;self.canvas.clear_image();self.status.setText('Loading preview…');self.debounce.start()
     def start_read(self):
@@ -182,13 +185,14 @@ class InputBrowser(ImageBrowser):
     def values(self):
         values={k:v.value() for k,v in self.fields.items()};values.update(method=self.method.currentText(),binning=self.binning.currentIndex(),remove_stripe_method=self.stripes.currentText(),prompt=self.prompt.text().strip());return values
     def apply(self):
+        self.show_feedback('')
         values=self.values();updates={k:v for k,v in values.items() if v!=self.initial[k]}
         if self.geometry.currentIndex() and self.geometry.currentIndex()!=self.initial_geometry:updates['geometry']='tomography' if self.geometry.currentIndex()==1 else 'laminography'
         if updates.get('geometry')=='laminography':updates['lamino_angle']=values['lamino_angle']
         if updates.get('geometry')=='tomography':updates.pop('lamino_angle',None)
         if 'search_row' in updates:updates['trial_row']=updates['search_row']
         mode={0:'unchanged',1:'manual',2:'auto'}[self.mode.currentIndex()] if self.mode.currentIndex()!=self.initial_mode else 'unchanged'
-        if not updates and mode=='unchanged':self.status.setText('No parameter changes. You can keep browsing or close this window.');return
+        if not updates and mode=='unchanged':self.show_feedback('No parameter changes. You can keep browsing or close this window.');return
         self.apply_requested.emit({'updates':updates,'mode':mode})
     def configure_source(self):
         source=self.source.currentText();shape=self.meta.get('white_shape') if source=='Flat' else self.meta.get('dark_shape') if source=='Dark' else [self.meta['projections']]
@@ -245,6 +249,6 @@ class ResultBrowser(ImageBrowser):
         item=self.items[self.frame.value()-1]
         try:unchanged=file_stamp(item['file'])==self.current_file_stamp
         except OSError:unchanged=False
-        if not unchanged:self.status.setText('This candidate changed or is missing. Reload it before selecting.');return
+        if not unchanged:self.show_feedback('This candidate changed or is missing. Reload it before selecting.',True);return
         self.select_requested.emit(copy.deepcopy(item))
     def closeEvent(self,event):self.refresh_timer.stop();super().closeEvent(event)

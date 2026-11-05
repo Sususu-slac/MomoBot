@@ -49,7 +49,7 @@ class ViewerTests(unittest.TestCase):
   entry,tool=self.link();dialog=self.open(entry,tool);dialog.canvas.row_picked.emit(.25);self.assertEqual(dialog.fields['search_row'].value(),4)
   dialog.geometry.setCurrentIndex(1);dialog.mode.setCurrentIndex(1);dialog.apply_button.click();self.pump();self.assertEqual(self.t['settings']['search_row'],4);self.assertEqual(self.t['settings']['trial_row'],4)
  def test_applying_unchanged_parameters_keeps_a_pending_trial_selection(self):
-  self.trial();entry,tool=self.link();dialog=self.open(entry,tool);before=copy.deepcopy(self.t['settings']);dialog.apply_button.click();self.assertEqual(self.t['settings'],before);self.assertEqual(self.t['sop']['phase'],'choose');self.assertIn('No parameter changes',dialog.status.text())
+  self.trial();entry,tool=self.link();dialog=self.open(entry,tool);before=copy.deepcopy(self.t['settings']);dialog.apply_button.click();self.assertEqual(self.t['settings'],before);self.assertEqual(self.t['sop']['phase'],'choose');self.assertIn('No parameter changes',dialog.feedback.text())
  def test_duplicate_link_reuses_the_same_window(self):
   entry,tool=self.link();first=self.open(entry,tool);self.assertIs(self.open(entry,tool),first);self.assertEqual(len(self.w.viewer_windows),1)
  def test_unknown_link_and_user_text_are_not_executable_links(self):
@@ -61,16 +61,17 @@ class ViewerTests(unittest.TestCase):
   with patch.object(JobStore,'submit') as submit:dialog.apply_button.click();self.pump();submit.assert_not_called()
   self.assertEqual(self.t['settings']['center'],15.5);self.assertEqual(self.t['settings']['binning'],1);self.assertEqual(self.t['sop']['phase'],'confirm');self.assertIn('Applied from Data Viewer','\n'.join(m['text'] for m in self.t['messages']));self.assertEqual(hashlib.sha256(self.path.read_bytes()).hexdigest(),self.before)
  def test_invalid_row_edit_does_not_partially_change_task(self):
-  entry,tool=self.link();dialog=self.open(entry,tool);before=copy.deepcopy(self.t['settings']);dialog.fields['start_row'].setValue(14);dialog.fields['end_row'].setValue(2);dialog.fields['gpu'].setValue(1);dialog.apply_button.click();self.pump();self.assertEqual(self.t['settings'],before);self.assertTrue(dialog.status.text());self.assertFalse(self.t['jobs'])
+  self.t['settings']['center']=15;self.t['sop'].update(geometry_confirmed=True,center_valid=True,mode='manual');self.w.sop.review(self.t)
+  entry,tool=self.link();dialog=self.open(entry,tool);before=copy.deepcopy(self.t['settings']);dialog.fields['start_row'].setValue(14);dialog.fields['end_row'].setValue(2);dialog.fields['gpu'].setValue(1);dialog.apply_button.click();self.wait(lambda:dialog.array is not None);self.assertEqual(self.t['settings'],before);self.assertTrue(dialog.feedback.text());self.assertFalse(self.t['jobs']);self.assertEqual(self.t['sop']['phase'],'edit_error');self.assertNotIn('review_fingerprint',self.t['sop'])
  def test_changing_input_while_viewer_is_open_prevents_wrong_task_write(self):
-  entry,tool=self.link();dialog=self.open(entry,tool);self.t['settings']['input_hdf5']='D:/another.h5';before=copy.deepcopy(self.t['settings']);dialog.fields['gpu'].setValue(1);dialog.apply_button.click();self.assertEqual(self.t['settings'],before);self.assertIn('different input',dialog.status.text())
+  entry,tool=self.link();dialog=self.open(entry,tool);self.t['settings']['input_hdf5']='D:/another.h5';before=copy.deepcopy(self.t['settings']);dialog.fields['gpu'].setValue(1);dialog.apply_button.click();self.assertEqual(self.t['settings'],before);self.assertIn('different input',dialog.feedback.text())
  def test_modified_input_file_is_rejected(self):
   entry,tool=self.link()
   with h5py.File(self.path,'a') as h:h.attrs['changed']=True
   self.assertIsNone(self.open(entry,tool));self.assertIn('changed',self.w.statusBar().currentMessage())
   with self.assertRaisesRegex(ValueError,'changed'):read_hdf5(self.path,'Projection',0,tool['source_stat'])
  def test_deleted_task_cannot_accept_open_viewer_edits(self):
-  entry,tool=self.link();dialog=self.open(entry,tool);self.t['_deleted']=True;dialog.fields['gpu'].setValue(1);dialog.apply_button.click();self.assertIn('deleted',dialog.status.text())
+  entry,tool=self.link();dialog=self.open(entry,tool);self.t['_deleted']=True;dialog.fields['gpu'].setValue(1);dialog.apply_button.click();self.assertIn('deleted',dialog.feedback.text())
  def test_selection_targets_its_original_task_after_chat_switch(self):
   items,entry,tool=self.trial();self.w.new_task();other=self.w.current;before=copy.deepcopy(other['settings']);apply_candidate(self.w,self.t,tool,items[1]);self.assertEqual(self.t['settings']['center'],12);self.assertEqual(other['settings'],before);self.assertEqual(self.w.current_id,self.t['id'])
  def test_trial_gui_selects_the_exact_candidate_and_only_reviews(self):
@@ -89,7 +90,7 @@ class ViewerTests(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'older'):apply_candidate(self.w,self.t,tool,items[0])
   self.assertEqual(self.t['settings']['center'],before)
  def test_trial_file_change_requires_reloading_before_selection(self):
-  items,entry,tool=self.trial();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);chosen=dialog.items[dialog.frame.value()-1];Path(chosen['file']).write_bytes(b'changed');dialog.use_button.click();self.assertIn('changed',dialog.status.text());self.assertEqual(self.t['settings']['center'],16)
+  items,entry,tool=self.trial();dialog=self.open(entry,tool);self.wait(lambda:dialog.array is not None);chosen=dialog.items[dialog.frame.value()-1];Path(chosen['file']).write_bytes(b'changed');dialog.use_button.click();self.assertIn('changed',dialog.feedback.text());self.assertEqual(self.t['settings']['center'],16)
  def test_float_reconstruction_browsing_is_natural_sorted_and_read_only(self):
   folder=self.root/'results';folder.mkdir()
   for n in (10,2,1):tifffile.imwrite(folder/f'recon_{n}.tiff',np.ones((20,20),np.float32)*n/1e8)

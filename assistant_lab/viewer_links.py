@@ -39,7 +39,10 @@ def apply_input(window,task,tool,payload):
     from .reconstruction_turns import apply_fields,validate_current
     writable(window,task,tool)
     turn=dict(intent='configure',operation='unchanged',mode=payload['mode'],row_scope='unchanged',updates=payload['updates'],selection='',query='none',message='')
-    draft=copy.deepcopy(task);apply_fields(window.sop,draft,turn);validate_current(draft)
+    draft=copy.deepcopy(task)
+    try:apply_fields(window.sop,draft,turn);validate_current(draft)
+    except (ValueError,KeyError) as error:
+        window.sop.reject(task,str(error));raise
     # Commit only after the entire edited draft has passed the same SOP validation.
     task['settings']=draft['settings'];task['sop']=draft['sop'];task['done']=draft['done'];task['sop'].pop('review_fingerprint',None)
     window.select_task(task['id']);details=', '.join(f'{k}={v}' for k,v in turn['updates'].items())
@@ -79,9 +82,9 @@ def open_tool(window,identity,entry_id,tool_id):
             dialog=InputBrowser(window,snapshot,tool)
             def applied(payload):
                 try:apply_input(window,task,tool,payload);dialog.accept()
-                except (ValueError,OSError,KeyError) as error:dialog.status.setText(str(error))
+                except (ValueError,OSError,KeyError) as error:dialog.show_feedback(str(error),True)
             dialog.apply_requested.connect(applied)
-            if not current_source(task,tool):dialog.apply_button.setEnabled(False);dialog.status.setText('Historical input: browsing only. Parameters belong to the current input.')
+            if not current_source(task,tool):dialog.apply_button.setEnabled(False);dialog.show_feedback('Historical input: browsing only. Parameters belong to the current input.')
         elif tool['kind'] in ('trials','results'):
             job=next((j for j in task['jobs'] if j['id']==tool['job_id']),None)
             if not job:raise ValueError('The saved job for this link is no longer available.')
@@ -100,7 +103,7 @@ def open_tool(window,identity,entry_id,tool_id):
             if tool['kind']=='trials' and not dialog.can_select:dialog.use_button.setToolTip('Browsing only: this trial is not the current pending selection. Open the latest trial link to select a parameter.')
             def selected(item):
                 try:apply_candidate(window,task,tool,item);dialog.accept()
-                except (ValueError,OSError,KeyError) as error:dialog.status.setText(str(error))
+                except (ValueError,OSError,KeyError) as error:dialog.show_feedback(str(error),True)
             dialog.select_requested.connect(selected)
         else:return None
     except (ValueError,OSError,KeyError) as error:

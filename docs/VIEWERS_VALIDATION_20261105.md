@@ -1,4 +1,4 @@
-# Linked viewers validation — MomoBot 0.10.0
+# Linked viewers validation — MomoBot 0.10.1
 
 214 native Windows unit/GUI checks passed, including 24 viewer checks. GitHub Windows checks run the complete suite against the released source.
 

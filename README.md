@@ -1,4 +1,4 @@
-# MomoBot 0.10.0
+# MomoBot 0.10.1
 
 A local chat assistant for BL62 reconstruction, SAM3 segmentation and fine-tuning. The left side lists saved tasks; the right side contains the conversation and message composer. Each launch opens a fresh chat. Sending the first message creates a task automatically; the New task button remains available. Select a saved task to reopen its conversation and draft. Standalone greetings reply immediately with the orange kitten sticker. Light/Dark themes are available.
 
@@ -58,7 +58,7 @@ Startup lists saved tasks without opening a previous conversation or creating an
 
 Chat follows new messages, growing replies and delayed text wrapping. Scrolling up pauses following so history stays readable; sending your next message resumes following the latest messages. Switching tasks restores the saved reading position. Model-first reconstruction behavior is unchanged.
 
-## 0.10.0 — linked data and result viewers
+## 0.10.1 — linked data and result viewers
 
 HDF5 information includes **View data / Set parameters**. The nonmodal input window previews projections, flat and dark frames; zoom/pan and display limits affect only the preview. Clicking a projection selects the zero-based search/trial row. Edit geometry/tilt, method, center/trial anchor, row range, binning, GPU, text feature, stripe removal and dezinger, then choose Apply to Momo. Changes use the same parameter validation and return to the chat workflow for review; they never start computation by themselves.
 
